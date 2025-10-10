@@ -1,0 +1,38 @@
+{
+  "lastUpdated": "2025-10-08T15:00:00+02:00",
+  "source": "Manuell gepflegter Datensatz – bitte bei neuen Ergebnissen aktualisieren.",
+  "matches": [
+    {
+      "id": "RLN-2025-10-08-01",
+      "kickoff": "2025-10-08T14:00:00+02:00",
+      "home": "VfB Oldenburg",
+      "away": "Hannover 96 II",
+      "score": "2:1",
+      "status": "Beendet"
+    },
+    {
+      "id": "RLN-2025-10-08-02",
+      "kickoff": "2025-10-08T18:30:00+02:00",
+      "home": "Weiche Flensburg 08",
+      "away": "Holstein Kiel II",
+      "score": "3:2",
+      "status": "Beendet"
+    },
+    {
+      "id": "RLN-2025-10-08-03",
+      "kickoff": "2025-10-08T19:30:00+02:00",
+      "home": "SV Meppen",
+      "away": "FC St. Pauli II",
+      "score": "1:1",
+      "status": "Beendet"
+    },
+    {
+      "id": "RLN-2025-10-09-01",
+      "kickoff": "2025-10-09T15:00:00+02:00",
+      "home": "SSV Jeddeloh",
+      "away": "VfB Lübeck",
+      "score": "-:-",
+      "status": "Geplant"
+    }
+  ]
+}

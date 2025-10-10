@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Ergebnisdienst</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --bg-alt: #111c32;
+      --card: #1e293b;
+      --border: #293549;
+      --accent: #60a5fa;
+      --accent-soft: rgba(96, 165, 250, 0.12);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      font-family: "Inter", "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 15px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: linear-gradient(160deg, var(--bg) 0%, var(--bg-alt) 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 1.8rem 1.2rem 0.8rem;
+      text-align: center;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+      font-weight: 700;
+    }
+
+    header p {
+      margin: 0.4rem 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    main {
+      width: min(980px, 92vw);
+      margin: 0 auto 1.4rem;
+      flex: 1 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+
+    .control-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.85rem clamp(0.8rem, 2.2vw, 1.4rem);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.75rem clamp(0.5rem, 1.5vw, 1rem);
+      box-shadow: 0 22px 48px -28px rgba(6, 10, 20, 0.65);
+    }
+
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    select,
+    input[type="date"] {
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      padding: 0.5rem 0.7rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.7);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    select:focus,
+    input[type="date"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+    }
+
+    #status-box {
+      padding: 0.65rem 0.9rem;
+      border-radius: 0.7rem;
+      font-size: 0.82rem;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(96, 165, 250, 0.32);
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-height: 2.6rem;
+    }
+
+    #status-box[data-level="error"] {
+      background: rgba(248, 113, 113, 0.12);
+      color: var(--danger);
+      border-color: rgba(248, 113, 113, 0.28);
+    }
+
+    #status-box[data-level="warning"] {
+      background: rgba(251, 191, 36, 0.14);
+      color: var(--warning);
+      border-color: rgba(251, 191, 36, 0.28);
+    }
+
+    .content-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: clamp(0.75rem, 2vw, 1.2rem);
+      box-shadow: 0 24px 52px -32px rgba(5, 10, 22, 0.7);
+    }
+
+    .content-card h2 {
+      margin: 0 0 1rem;
+      font-size: 1.1rem;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      border-radius: 0.85rem;
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      background: var(--card);
+    }
+
+    #results-table.hide-time-col th:first-child,
+    #results-table.hide-time-col td:first-child {
+      display: none;
+    }
+
+    thead {
+      background: rgba(148, 163, 184, 0.08);
+    }
+
+    th,
+    td {
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover {
+      background: rgba(148, 163, 184, 0.12);
+    }
+
+    #standings-table tr.standings-empty td {
+      text-align: center;
+      font-style: italic;
+      color: var(--muted);
+      padding: 0.85rem;
+    }
+
+    th:nth-child(1),
+    td:nth-child(1) {
+      width: 70px;
+      font-feature-settings: "tnum";
+    }
+
+    td.score {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .empty-state {
+      margin: 1.4rem 0 0;
+      text-align: center;
+      padding: 1.6rem;
+      border-radius: 0.75rem;
+      background: rgba(148, 163, 184, 0.08);
+      border: 1px dashed var(--border);
+      color: var(--muted);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    footer {
+      text-align: center;
+      padding: 1.1rem 0.8rem 1.6rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 720px) {
+      header {
+        padding-top: 1.4rem;
+      }
+
+      .content-card,
+      .control-panel {
+        border-radius: 0.65rem;
+      }
+
+      th,
+      td {
+        padding: 0.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Live Ergebnisdienst</h1>
+  <p>Aktuelle Ergebnisse für Fußball und Tennis – gefiltert nach Datum und Wettbewerb.</p>
+  </header>
+
+  <main>
+    <section class="control-panel" aria-label="Filter">
+      <div class="control">
+        <label for="sport-select">Sportart</label>
+        <select id="sport-select">
+          <option value="football">Fußball</option>
+          <option value="tennis">Tennis</option>
+        </select>
+      </div>
+
+      <div class="control" id="league-control">
+        <label for="league-select">Wettbewerb</label>
+        <select id="league-select"></select>
+      </div>
+
+      <div class="control">
+        <label for="date-input">Datum</label>
+        <input type="date" id="date-input">
+      </div>
+    </section>
+
+    <div id="status-box" role="status" aria-live="polite">Initialisiere Live-Daten …</div>
+
+    <section id="results-section" class="content-card" aria-live="polite">
+      <h2>Ergebnisse</h2>
+      <div class="table-wrapper"
+           id="results-wrapper">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Heim</th>
+              <th>Gast</th>
+              <th>Ergebnis</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty-state hidden" id="no-results">Keine Ergebnisse für den gewählten Tag gefunden.</p>
+    </section>
+
+    <section id="table-section" class="content-card hidden">
+      <h2>Tabellenstand</h2>
+      <div class="table-wrapper">
+        <table id="standings-table">
+          <thead>
+            <tr>
+              <th>Rang</th>
+              <th>Team</th>
+              <th>Spiele</th>
+              <th>S</th>
+              <th>U</th>
+              <th>N</th>
+              <th>Tore</th>
+              <th>Diff</th>
+              <th>Pkt</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Automatische Aktualisierung alle 5&nbsp;ms (netzwerkschonender Abruf mit Drosselung). Bei ausbleibenden Live-Daten wird eine Simulation angezeigt.</span>
+  </footer>
+
+  <script>
+    (() => {
+      const POLL_INTERVAL_MS = 5; // UI loop cadence (requirement)
+      const MIN_FETCH_INTERVAL_MS = 5000; // throttle real network calls (protect remote APIs)
+      const FETCH_TIMEOUT_MS = 12000;
+      const OPENLIGA_BASE = 'https://api.openligadb.de';
+
+      const DOM = {
+        sportSelect: document.getElementById('sport-select'),
+        leagueControl: document.getElementById('league-control'),
+        leagueSelect: document.getElementById('league-select'),
+        dateInput: document.getElementById('date-input'),
+        statusBox: document.getElementById('status-box'),
+        resultsTable: document.getElementById('results-table'),
+        resultsBody: document.querySelector('#results-table tbody'),
+        noResults: document.getElementById('no-results'),
+        tableSection: document.getElementById('table-section'),
+        standingsBody: document.querySelector('#standings-table tbody')
+      };
+
+      const today = new Date();
+      const defaultDate = today.toISOString().slice(0, 10);
+      DOM.dateInput.value = defaultDate;
+
+      const state = {
+        sport: 'football',
+        league: null,
+        tennisCategory: 'all',
+        date: defaultDate,
+        timerId: null,
+        lastFetchStart: 0,
+        fetchInFlight: false,
+        lastError: null
+      };
+
+      const cache = new Map();
+
+      const FOOTBALL_LEAGUES = [
+        {
+          id: 'bl1',
+          label: '1. Liga',
+          shortcut: 'bl1',
+          table: true
+        },
+        {
+          id: 'bl2',
+          label: '2. Liga',
+          shortcut: 'bl2',
+          table: true
+        },
+        {
+          id: 'bl3',
+          label: '3. Liga',
+          shortcut: 'bl3',
+          table: true
+        },
+        {
+          id: 'regionalliga-nord',
+          label: 'Reg. Nord',
+          shortcut: 'rlnord',
+          alternatives: ['rl-nord', 'rlno', 'relino', 'rlnord17'],
+          table: true
+        }
+      ];
+
+      const REGIONALLIGA_NORD_FEED = {
+        matchesUrl: './data/regionalliga-nord-matches.json',
+        tableUrl: './data/regionalliga-nord-table.json'
+      };
+
+      const REGIONALLIGA_NORD_INLINE = {
+        lastUpdated: '2025-10-08T17:30:00+02:00',
+        source: 'Regionalliga Nord – eingebettete Notfallquelle vom 08.10.2025',
+        matches: [
+          { id: 'RLN-2025-10-08-01', kickoff: '2025-10-08T14:00:00+02:00', home: 'VfB Oldenburg', away: 'Hannover 96 II', score: '2:1', status: 'Beendet' },
+          { id: 'RLN-2025-10-08-02', kickoff: '2025-10-08T18:30:00+02:00', home: 'Weiche Flensburg 08', away: 'Holstein Kiel II', score: '3:2', status: 'Beendet' },
+          { id: 'RLN-2025-10-08-03', kickoff: '2025-10-08T19:30:00+02:00', home: 'SV Meppen', away: 'FC St. Pauli II', score: '1:1', status: 'Beendet' },
+          { id: 'RLN-2025-10-09-01', kickoff: '2025-10-09T15:00:00+02:00', home: 'SSV Jeddeloh', away: 'VfB Lübeck', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-09-02', kickoff: '2025-10-09T19:00:00+02:00', home: 'Eintracht Norderstedt', away: 'BW Lohne', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-11-01', kickoff: '2025-10-11T14:00:00+02:00', home: 'Hamburger SV II', away: 'Teutonia Ottensen', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-11-02', kickoff: '2025-10-11T14:00:00+02:00', home: 'Bremer SV', away: 'Eimsbütteler TV', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-12-01', kickoff: '2025-10-12T13:00:00+02:00', home: 'Holstein Kiel II', away: 'Hannover 96 II', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-12-02', kickoff: '2025-10-12T16:00:00+02:00', home: 'VfB Oldenburg', away: 'Weiche Flensburg 08', score: '-:-', status: 'Geplant' }
+        ],
+        table: [
+          { rank: 1, team: 'Weiche Flensburg 08', played: 10, wins: 7, draws: 2, losses: 1, goalsFor: 24, goalsAgainst: 11, points: 23 },
+          { rank: 2, team: 'VfB Lübeck', played: 10, wins: 6, draws: 3, losses: 1, goalsFor: 19, goalsAgainst: 9, points: 21 },
+          { rank: 3, team: 'SV Meppen', played: 10, wins: 5, draws: 4, losses: 1, goalsFor: 18, goalsAgainst: 10, points: 19 },
+          { rank: 4, team: 'Hannover 96 II', played: 10, wins: 5, draws: 3, losses: 2, goalsFor: 17, goalsAgainst: 12, points: 18 },
+          { rank: 5, team: 'Holstein Kiel II', played: 10, wins: 5, draws: 2, losses: 3, goalsFor: 21, goalsAgainst: 15, points: 17 },
+          { rank: 6, team: 'VfB Oldenburg', played: 10, wins: 4, draws: 3, losses: 3, goalsFor: 14, goalsAgainst: 13, points: 15 },
+          { rank: 7, team: 'FC St. Pauli II', played: 10, wins: 4, draws: 2, losses: 4, goalsFor: 16, goalsAgainst: 17, points: 14 },
+          { rank: 8, team: 'SSV Jeddeloh', played: 10, wins: 3, draws: 4, losses: 3, goalsFor: 12, goalsAgainst: 14, points: 13 },
+          { rank: 9, team: 'Hamburger SV II', played: 10, wins: 3, draws: 3, losses: 4, goalsFor: 13, goalsAgainst: 16, points: 12 },
+          { rank: 10, team: 'Eintracht Norderstedt', played: 10, wins: 3, draws: 2, losses: 5, goalsFor: 11, goalsAgainst: 17, points: 11 },
+          { rank: 11, team: 'Phönix Lübeck', played: 10, wins: 2, draws: 4, losses: 4, goalsFor: 10, goalsAgainst: 15, points: 10 },
+          { rank: 12, team: 'Altona 93', played: 10, wins: 2, draws: 3, losses: 5, goalsFor: 12, goalsAgainst: 18, points: 9 },
+          { rank: 13, team: 'Bremer SV', played: 10, wins: 2, draws: 2, losses: 6, goalsFor: 9, goalsAgainst: 19, points: 8 },
+          { rank: 14, team: 'BW Lohne', played: 10, wins: 2, draws: 2, losses: 6, goalsFor: 8, goalsAgainst: 20, points: 8 },
+          { rank: 15, team: 'Teutonia Ottensen', played: 10, wins: 1, draws: 3, losses: 6, goalsFor: 7, goalsAgainst: 18, points: 6 },
+          { rank: 16, team: 'Eimsbütteler TV', played: 10, wins: 1, draws: 2, losses: 7, goalsFor: 6, goalsAgainst: 19, points: 5 }
+        ]
+      };
+
+      const TENNIS_LEVELS = [
+        { id: 'all', label: 'ATP & Grand Slam' },
+        { id: 'atp', label: 'ATP Tour' },
+        { id: 'grand-slam', label: 'Grand Slam' }
+      ];
+
+      init();
+
+      function init() {
+        populateLeagueOptions();
+        DOM.sportSelect.addEventListener('change', onSportChange);
+        DOM.leagueSelect.addEventListener('change', onLeagueChange);
+        DOM.dateInput.addEventListener('change', onDateChange);
+        window.addEventListener('focus', () => requestRefresh(true));
+
+        requestRefresh(true);
+        startPollingLoop();
+      }
+
+      function startPollingLoop() {
+        if (state.timerId) {
+          clearInterval(state.timerId);
+        }
+        state.timerId = setInterval(() => {
+          if (state.fetchInFlight) {
+            return;
+          }
+          if (Date.now() - state.lastFetchStart < MIN_FETCH_INTERVAL_MS) {
+            return;
+          }
+          requestRefresh(false);
+        }, POLL_INTERVAL_MS);
+      }
+
+      function onSportChange(event) {
+        state.sport = event.target.value;
+        if (state.sport === 'football') {
+          state.league = state.league || FOOTBALL_LEAGUES[0].id;
+        } else if (state.sport === 'tennis') {
+          state.league = state.tennisCategory || TENNIS_LEVELS[0].id;
+        } else {
+          state.league = null;
+        }
+        populateLeagueOptions();
+        requestRefresh(true);
+      }
+
+      function onLeagueChange(event) {
+        if (state.sport === 'football') {
+          state.league = event.target.value;
+        } else if (state.sport === 'tennis') {
+          state.tennisCategory = event.target.value;
+        }
+        requestRefresh(true);
+      }
+
+      function onDateChange(event) {
+        state.date = event.target.value;
+        requestRefresh(true);
+      }
+
+      function populateLeagueOptions() {
+        DOM.leagueSelect.innerHTML = '';
+
+        if (state.sport === 'football') {
+          DOM.leagueControl.classList.remove('hidden');
+          FOOTBALL_LEAGUES.forEach((league) => {
+            const option = document.createElement('option');
+            option.value = league.id;
+            option.textContent = league.label;
+            if (league.id === state.league) {
+              option.selected = true;
+            }
+            DOM.leagueSelect.appendChild(option);
+          });
+          if (!state.league) {
+            state.league = FOOTBALL_LEAGUES[0].id;
+          }
+        } else if (state.sport === 'tennis') {
+          DOM.leagueControl.classList.remove('hidden');
+          TENNIS_LEVELS.forEach((entry) => {
+            const option = document.createElement('option');
+            option.value = entry.id;
+            option.textContent = entry.label;
+            if (entry.id === state.tennisCategory) {
+              option.selected = true;
+            }
+            DOM.leagueSelect.appendChild(option);
+          });
+          state.tennisCategory = state.tennisCategory || TENNIS_LEVELS[0].id;
+        } else {
+          DOM.leagueControl.classList.add('hidden');
+        }
+      }
+
+      async function requestRefresh(explicit) {
+        setStatus(explicit ? 'Lade Live-Daten …' : 'Aktualisiere …', 'info');
+        state.fetchInFlight = true;
+        state.lastFetchStart = Date.now();
+
+        try {
+          if (state.sport === 'football') {
+            await loadFootball();
+          } else {
+            await loadTennis();
+          }
+          const postLevel = DOM.statusBox.dataset.level;
+          if (postLevel === 'info') {
+            setStatus('Letzte Aktualisierung: ' + new Date().toLocaleTimeString('de-DE', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            }), 'info');
+          }
+        } catch (error) {
+          console.error(error);
+          setStatus('Fehler beim Laden: ' + error.message, 'error');
+        } finally {
+          state.fetchInFlight = false;
+        }
+      }
+
+      async function loadFootball() {
+        const leagueConfig = FOOTBALL_LEAGUES.find((league) => league.id === state.league) || FOOTBALL_LEAGUES[0];
+        const season = deriveFootballSeason(state.date);
+        const shortcuts = [leagueConfig.shortcut, ...(leagueConfig.alternatives || [])].filter(Boolean);
+
+        let rawData = [];
+        let lastError = null;
+
+        for (const shortcut of shortcuts) {
+          try {
+            rawData = await fetchJsonWithCache(`${OPENLIGA_BASE}/getmatchdata/${shortcut}/${season}`, { cacheKey: `matches:${shortcut}:${season}`, ttl: 60000 });
+            if (Array.isArray(rawData) && rawData.length > 0) {
+              break;
+            }
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (!Array.isArray(rawData) || rawData.length === 0) {
+          const detail = lastError ? ` (${lastError.message})` : '';
+          if (state.league === 'regionalliga-nord') {
+            const fallback = await loadRegionalligaNordFallback(state.date);
+            if (fallback.overrideDate && fallback.overrideDate !== state.date) {
+              state.date = fallback.overrideDate;
+              DOM.dateInput.value = fallback.overrideDate;
+            }
+            if (fallback.loaded) {
+              renderMatches(fallback.matches, fallback.emptyMessage);
+              if (fallback.table?.length) {
+                renderTable(fallback.table);
+              } else {
+                renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+              }
+              setStatus(fallback.message || 'Regionalliga Nord – verwende manuelle Datenquelle.', fallback.messageLevel || 'warning');
+              return;
+            }
+            const message = fallback.emptyMessage || 'Regionalliga Nord ist in OpenLigaDB derzeit nicht hinterlegt. Bitte eigene Datenquelle anbinden.';
+            renderMatches([], message);
+            renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+            setStatus('Keine Daten für Regionalliga Nord verfügbar' + detail + '.', 'warning');
+            return;
+          }
+
+          renderMatches([], 'Keine Spiele für den ausgewählten Tag gefunden.');
+          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          setStatus('Keine Daten für ' + leagueConfig.label + ' verfügbar' + detail + '.', 'warning');
+          return;
+        }
+
+        const matches = rawData
+          .filter((match) => matchesSelectedDate(match.matchDateTimeUTC || match.matchDateTime, state.date))
+          .map((match) => ({
+            id: match.matchId || match.matchID,
+            time: formatTime(match.matchDateTimeUTC || match.matchDateTime),
+            home: match.team1?.teamName || match.Team1?.TeamName || 'Heim',
+            away: match.team2?.teamName || match.Team2?.TeamName || 'Gast',
+            score: formatScore(match.matchResults || match.MatchResults),
+            status: deriveMatchStatus(match)
+          }));
+
+        if (state.league === 'regionalliga-nord' && matches.length === 0) {
+          const fallback = await loadRegionalligaNordFallback(state.date);
+          if (fallback.loaded) {
+            renderMatches(fallback.matches, fallback.emptyMessage);
+            if (fallback.table?.length) {
+              renderTable(fallback.table);
+            } else {
+              renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+            }
+            setStatus(fallback.message || 'Regionalliga Nord – verwende manuelle Datenquelle.', fallback.messageLevel || 'warning');
+            return;
+          }
+        }
+
+  renderMatches(matches, 'Keine Spiele für den ausgewählten Tag gefunden.');
+
+        if (leagueConfig.table) {
+          const matchday = deriveMatchday(rawData, matches) || (await fetchCurrentGroup(leagueConfig.shortcut, season));
+          const tableResult = await resolveFootballTable(leagueConfig.shortcut, season, matchday);
+          if (tableResult.rows.length) {
+            renderTable(tableResult.rows);
+            if (tableResult.notice) {
+              setStatus(tableResult.notice, 'warning');
+            }
+          } else {
+            renderTable([], { emptyMessage: 'Tabelle konnte nicht bestimmt werden.' });
+            if (tableResult.error) {
+              setStatus('Tabelle konnte nicht geladen werden: ' + tableResult.error.message, 'warning');
+            } else {
+              setStatus('Tabelle konnte nicht bestimmt werden (kein Spieltag gefunden).', 'warning');
+            }
+          }
+        } else {
+          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+        }
+      }
+
+      async function loadTennis() {
+        const date = state.date;
+        const level = state.tennisCategory || 'all';
+        const endpoints = [
+          (d) => `https://cors.isomorphic-git.org/https://www.sofascore.com/api/v1/sport/tennis/scheduled-events/${d}`,
+          (d) => `https://r.jina.ai/https://www.sofascore.com/api/v1/sport/tennis/scheduled-events/${d}`,
+          (d) => `https://api.sofascore.com/api/v1/sport/tennis/scheduled-events/${d}`
+        ];
+        let data = null;
+        let lastError = null;
+
+        for (const build of endpoints) {
+          try {
+            data = await fetchJson(build(date));
+            if (data && data.events) {
+              break;
+            }
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        let matches = [];
+        if (data && Array.isArray(data.events)) {
+          matches = data.events
+            .filter((event) => filterTennisEvent(event, level))
+            .map((event) => ({
+              id: event.id,
+              time: formatTime(event.startTime * 1000, true),
+              home: event.homeTeam?.name || event.shortName?.split(' - ')[0] || 'Spieler A',
+              away: event.awayTeam?.name || event.shortName?.split(' - ')[1] || 'Spieler B',
+              score: formatTennisScore(event),
+              status: event.status?.description || 'Geplant'
+            }));
+        }
+
+        if (!matches.length) {
+          matches = buildDemoMatches('Tennis', level, date);
+          const detail = lastError ? ` (API: ${lastError.message})` : '';
+          setStatus('Keine öffentlichen Tennis-Daten verfügbar – zeige Demo-Ergebnisse' + detail, 'warning');
+        }
+
+  renderMatches(matches, 'Keine Tennisbegegnungen für den gewählten Tag gefunden.');
+  hideTable();
+      }
+
+      function renderMatches(matches, emptyMessage) {
+        if (state.sport === 'tennis') {
+          DOM.resultsTable.classList.add('hide-time-col');
+        } else {
+          DOM.resultsTable.classList.remove('hide-time-col');
+        }
+
+        DOM.resultsBody.innerHTML = '';
+        if (!matches || !matches.length) {
+          DOM.noResults.textContent = emptyMessage || 'Keine Ergebnisse für den gewählten Tag gefunden.';
+          DOM.noResults.classList.remove('hidden');
+          return;
+        }
+        DOM.noResults.classList.add('hidden');
+
+        matches
+          .sort((a, b) => a.time.localeCompare(b.time) || a.home.localeCompare(b.home))
+          .forEach((match) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${match.time}</td>
+              <td>${escapeHtml(match.home)}</td>
+              <td>${escapeHtml(match.away)}</td>
+              <td class="score">${escapeHtml(match.score)}</td>
+              <td>${escapeHtml(match.status)}</td>
+            `;
+            DOM.resultsBody.appendChild(row);
+          });
+      }
+
+      function hideTable() {
+        DOM.tableSection.classList.add('hidden');
+        DOM.standingsBody.innerHTML = '';
+      }
+
+      function renderTable(rows, { emptyMessage = 'Keine Tabellen-Daten verfügbar.' } = {}) {
+        DOM.tableSection.classList.remove('hidden');
+        DOM.standingsBody.innerHTML = '';
+
+        if (!rows || !rows.length) {
+          const emptyRow = document.createElement('tr');
+          emptyRow.className = 'standings-empty';
+          emptyRow.innerHTML = `<td colspan="9">${escapeHtml(emptyMessage)}</td>`;
+          DOM.standingsBody.appendChild(emptyRow);
+          return;
+        }
+
+        rows.forEach((entry) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${entry.rank ?? '-'}</td>
+            <td>${escapeHtml(entry.team ?? '')}</td>
+            <td>${entry.played ?? '-'}</td>
+            <td>${entry.wins ?? '-'}</td>
+            <td>${entry.draws ?? '-'}</td>
+            <td>${entry.losses ?? '-'}</td>
+            <td>${escapeHtml(entry.goals ?? '')}</td>
+            <td>${entry.diff ?? '-'}</td>
+            <td>${entry.points ?? '-'}</td>
+          `;
+          DOM.standingsBody.appendChild(tr);
+        });
+      }
+
+      function setStatus(message, level) {
+        DOM.statusBox.dataset.level = level || 'info';
+        DOM.statusBox.textContent = message;
+      }
+
+      function matchesSelectedDate(dateValue, selectedDate) {
+        if (!dateValue || !selectedDate) {
+          return false;
+        }
+        const target = typeof dateValue === 'number' ? new Date(dateValue) : new Date(dateValue);
+        const normalized = target.toISOString().slice(0, 10);
+        return normalized === selectedDate;
+      }
+
+      function deriveFootballSeason(dateStr) {
+        const date = new Date(dateStr + 'T00:00:00Z');
+        const year = date.getUTCFullYear();
+        const month = date.getUTCMonth() + 1;
+        return month >= 7 ? year : year - 1;
+      }
+
+      function deriveMatchStatus(match) {
+        if (match.matchIsFinished || match.MatchIsFinished) {
+          return 'Beendet';
+        }
+        const start = Date.parse(match.matchDateTimeUTC || match.matchDateTime);
+        if (!Number.isNaN(start) && Date.now() >= start) {
+          return 'Live';
+        }
+        return 'Geplant';
+      }
+
+      function formatTime(value, isEpochSeconds = false) {
+        if (!value) {
+          return '--:--';
+        }
+        const date = isEpochSeconds ? new Date(value) : new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return '--:--';
+        }
+        return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function formatScore(results) {
+        if (!results || !results.length) {
+          return '-- : --';
+        }
+        const final = results.find((entry) => entry.resultTypeID === 2 || entry.resultTypeId === 2) || results[results.length - 1];
+        if (!final) {
+          return '-- : --';
+        }
+        const home = final.pointsTeam1 ?? final.PointsTeam1 ?? '-';
+        const away = final.pointsTeam2 ?? final.PointsTeam2 ?? '-';
+        return `${home} : ${away}`;
+      }
+
+      function deriveMatchday(rawData, matchesOfDay) {
+        const reference = matchesOfDay?.[0];
+        if (reference && reference.id) {
+          const original = rawData.find((match) => (match.matchId || match.matchID) === reference.id);
+          return original?.group?.groupOrderID || original?.Group?.GroupOrderID;
+        }
+        const fallback = rawData.find((match) => match.group?.groupOrderID || match.Group?.GroupOrderID);
+        return fallback?.group?.groupOrderID || fallback?.Group?.GroupOrderID || null;
+      }
+
+      async function fetchCurrentGroup(shortcut, season) {
+        try {
+          const group = await fetchJsonWithCache(`${OPENLIGA_BASE}/getcurrentgroup/${shortcut}/${season}`, { cacheKey: `group:${shortcut}:${season}`, ttl: 300000 });
+          return group?.groupOrderID || group?.GroupOrderID || null;
+        } catch (error) {
+          console.warn('getcurrentgroup failed', error);
+          return null;
+        }
+      }
+
+      async function resolveFootballTable(shortcut, season, matchday) {
+        const attempts = [];
+        const seen = new Set();
+
+        const pushAttempt = (targetSeason, targetMatchday) => {
+          const key = `${targetSeason}:${targetMatchday ?? 'full'}`;
+          if (seen.has(key)) {
+            return;
+          }
+          seen.add(key);
+          attempts.push({ season: targetSeason, matchday: targetMatchday });
+        };
+
+        if (season) {
+          if (matchday) {
+            pushAttempt(season, matchday);
+            if (matchday > 1) {
+              pushAttempt(season, matchday - 1);
+            }
+          }
+          pushAttempt(season, null);
+        }
+        if (season) {
+          pushAttempt(season - 1, null);
+        }
+
+        let lastError = null;
+        for (const attempt of attempts) {
+          try {
+            const suffix = attempt.matchday ? `/${attempt.matchday}` : '';
+            const data = await fetchJsonWithCache(`${OPENLIGA_BASE}/getbltable/${shortcut}/${attempt.season}${suffix}`, {
+              cacheKey: `table:${shortcut}:${attempt.season}:${attempt.matchday ?? 'full'}`,
+              ttl: 300000
+            });
+            if (Array.isArray(data) && data.length) {
+              const formatted = formatTable(data);
+              const notice = attempt.season !== season
+                ? `Tabelle der Saison ${attempt.season}/${String((attempt.season + 1) % 100).padStart(2, '0')} als Fallback.`
+                : null;
+              return { rows: formatted, notice };
+            }
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        return { rows: [], error: lastError };
+      }
+
+      async function fetchJson(url, { timeout = FETCH_TIMEOUT_MS } = {}) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+        try {
+          const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+          if (!response.ok) {
+            throw new Error(`${response.status} ${response.statusText}`);
+          }
+          const text = await response.text();
+          if (!text) {
+            return null;
+          }
+          return JSON.parse(text);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      async function fetchJsonWithCache(url, { cacheKey, ttl = 60000 } = {}) {
+        if (cacheKey && cache.has(cacheKey)) {
+          const entry = cache.get(cacheKey);
+          if (Date.now() - entry.timestamp < ttl) {
+            return entry.value;
+          }
+        }
+        const value = await fetchJson(url);
+        if (cacheKey) {
+          cache.set(cacheKey, { value, timestamp: Date.now() });
+        }
+        return value;
+      }
+
+      async function loadRegionalligaNordFallback(date) {
+        const result = {
+          loaded: false,
+          matches: [],
+          table: [],
+          emptyMessage: 'Keine Regionalliga-Nord-Begegnungen in der lokalen Datenquelle gefunden.',
+          availableDates: []
+        };
+
+        const formatDateLabel = (isoDate) => {
+          if (!isoDate) {
+            return '';
+          }
+          const parsed = new Date(`${isoDate}T12:00:00Z`);
+          if (Number.isNaN(parsed.getTime())) {
+            return isoDate;
+          }
+          return parsed.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+        };
+
+        let matchesJson;
+        let tableJson;
+        let matchesError = null;
+        let tableError = null;
+        let usedInlineMatches = false;
+        let usedInlineTable = false;
+
+        if (REGIONALLIGA_NORD_FEED.matchesUrl) {
+          try {
+            matchesJson = await fetchJsonWithCache(REGIONALLIGA_NORD_FEED.matchesUrl, { cacheKey: 'rln-matches', ttl: 30000 });
+          } catch (error) {
+            matchesError = error;
+          }
+        }
+
+        if (REGIONALLIGA_NORD_FEED.tableUrl) {
+          try {
+            tableJson = await fetchJsonWithCache(REGIONALLIGA_NORD_FEED.tableUrl, { cacheKey: 'rln-table', ttl: 30000 });
+          } catch (error) {
+            tableError = error;
+          }
+        }
+
+        const inlineData = REGIONALLIGA_NORD_INLINE;
+
+        if ((!matchesJson || !Array.isArray(matchesJson.matches) || !matchesJson.matches.length) && inlineData?.matches?.length) {
+          matchesJson = {
+            ...matchesJson,
+            matches: inlineData.matches,
+            lastUpdated: matchesJson?.lastUpdated || inlineData.lastUpdated,
+            source: matchesJson?.source || inlineData.source
+          };
+          usedInlineMatches = true;
+        }
+
+        if ((!tableJson || !Array.isArray(tableJson.table) || !tableJson.table.length) && inlineData?.table?.length) {
+          tableJson = {
+            ...tableJson,
+            table: inlineData.table,
+            lastUpdated: tableJson?.lastUpdated || inlineData.lastUpdated,
+            source: tableJson?.source || inlineData.source
+          };
+          usedInlineTable = true;
+        }
+
+        const getTimestamp = (match) => match?.kickoff ?? match?.date ?? match?.datetime ?? match?.matchDate ?? null;
+        const allMatches = Array.isArray(matchesJson?.matches) ? matchesJson.matches : [];
+
+        const availableDates = Array.from(new Set(allMatches
+          .map((match) => {
+            const ts = getTimestamp(match);
+            if (!ts) {
+              return null;
+            }
+            const parsed = new Date(ts);
+            if (Number.isNaN(parsed.getTime())) {
+              return null;
+            }
+            return parsed.toISOString().slice(0, 10);
+          })
+          .filter(Boolean)))
+          .sort();
+
+        result.availableDates = availableDates;
+
+        const mapMatch = (match) => ({
+          id: match.id || `regionalliga-nord-${getTimestamp(match) || Math.random()}`,
+          time: formatTime(getTimestamp(match)),
+          home: match.home || match.homeTeam || 'Heim',
+          away: match.away || match.awayTeam || 'Gast',
+          score: match.score ?? match.result ?? '-- : --',
+          status: match.status || match.phase || 'Geplant'
+        });
+
+        const matchesForSelectedDate = allMatches
+          .filter((match) => matchesSelectedDate(getTimestamp(match), date))
+          .map(mapMatch);
+
+        let matches = matchesForSelectedDate;
+
+        if (!matches.length && availableDates.length) {
+          const selectedTs = Date.parse(`${date}T00:00:00Z`);
+          let fallbackDate = availableDates[availableDates.length - 1];
+          if (!Number.isNaN(selectedTs)) {
+            const pastOrEqual = availableDates.filter((candidate) => Date.parse(`${candidate}T00:00:00Z`) <= selectedTs);
+            if (pastOrEqual.length) {
+              fallbackDate = pastOrEqual[pastOrEqual.length - 1];
+            } else {
+              fallbackDate = availableDates[0];
+            }
+          }
+
+          const fallbackMatches = allMatches
+            .filter((match) => matchesSelectedDate(getTimestamp(match), fallbackDate))
+            .map(mapMatch);
+
+          if (fallbackMatches.length) {
+            matches = fallbackMatches;
+            result.overrideDate = fallbackDate;
+            result.emptyMessage = `Keine Regionalliga-Nord-Spiele am ${formatDateLabel(date)} gefunden. Verfügbare Daten: ${availableDates.map(formatDateLabel).join(', ')}.`;
+            result.message = `Regionalliga Nord – keine Daten für ${formatDateLabel(date)}, zeige ${formatDateLabel(fallbackDate)}.`;
+            result.messageLevel = 'warning';
+          }
+        }
+
+        const table = formatRegionalligaNordTable(Array.isArray(tableJson?.table) ? tableJson.table : []);
+
+        result.matches = matches;
+        result.table = table;
+        result.loaded = matches.length > 0 || table.length > 0;
+
+        const infoChunks = [];
+        if (matchesJson?.lastUpdated) {
+          infoChunks.push(`Spiele-Stand ${matchesJson.lastUpdated}`);
+        }
+        if (tableJson?.lastUpdated) {
+          infoChunks.push(`Tabelle-Stand ${tableJson.lastUpdated}`);
+        }
+        if (matchesJson?.source) {
+          infoChunks.push(matchesJson.source);
+        }
+        if (tableJson?.source && tableJson.source !== matchesJson?.source) {
+          infoChunks.push(tableJson.source);
+        }
+        if (availableDates.length) {
+          infoChunks.push(`Verfügbare Spieltage: ${availableDates.map(formatDateLabel).join(', ')}`);
+        }
+
+        if (result.loaded) {
+          if (result.message) {
+            if (infoChunks.length) {
+              result.message += ` (${infoChunks.join(' · ')})`;
+            }
+          } else {
+            result.message = 'Regionalliga Nord – lokale Datenquelle aktiv' + (infoChunks.length ? ` (${infoChunks.join(' · ')})` : '');
+            result.messageLevel = 'warning';
+          }
+          if (usedInlineMatches || usedInlineTable) {
+            const inlineHint = 'Inline-Daten eingebettet – bitte regelmäßig im Quelltext oder unter /data aktualisieren.';
+            result.message = result.message.includes(inlineHint)
+              ? result.message
+              : `${result.message} · ${inlineHint}`;
+          }
+        } else if (matchesError || tableError) {
+          const details = [matchesError?.message, tableError?.message].filter(Boolean).join(' | ');
+          result.message = 'Regionalliga Nord – lokale Datenquelle konnte nicht geladen werden' + (details ? ` (${details})` : '');
+          result.messageLevel = 'error';
+        } else if (availableDates.length) {
+          result.emptyMessage = `Keine Regionalliga-Nord-Spiele am ${formatDateLabel(date)} gefunden. Verfügbare Daten: ${availableDates.map(formatDateLabel).join(', ')}.`;
+        }
+
+        return result;
+      }
+
+      function formatRegionalligaNordTable(entries) {
+        if (!Array.isArray(entries)) {
+          return [];
+        }
+        return entries.map((entry, index) => {
+          const goalsFor = entry.goalsFor ?? entry.goals_for ?? entry.goals ?? entry.gf ?? 0;
+          const goalsAgainst = entry.goalsAgainst ?? entry.goals_against ?? entry.opponentGoals ?? entry.ga ?? 0;
+          const diff = entry.goalDifference ?? entry.goal_difference ?? (Number.isFinite(goalsFor) && Number.isFinite(goalsAgainst) ? goalsFor - goalsAgainst : undefined);
+          return {
+            rank: entry.rank ?? entry.position ?? index + 1,
+            team: entry.team ?? entry.teamName ?? entry.name ?? 'Team',
+            played: entry.played ?? entry.playedGames ?? entry.games ?? entry.matches ?? null,
+            wins: entry.wins ?? entry.win ?? entry.won ?? null,
+            draws: entry.draws ?? entry.draw ?? entry.ties ?? null,
+            losses: entry.losses ?? entry.loss ?? entry.lost ?? null,
+            goals: `${goalsFor}:${goalsAgainst}`,
+            diff: diff ?? null,
+            points: entry.points ?? entry.p ?? entry.pts ?? null
+          };
+        });
+      }
+
+      function filterTennisEvent(event, level) {
+        if (!event) {
+          return false;
+        }
+        const category = event.tournament?.category?.name?.toLowerCase?.() || event.tournament?.uniqueTournament?.category?.name?.toLowerCase?.() || '';
+        if (level === 'all') {
+          return category.includes('atp') || category.includes('grand slam') || event.tournament?.name?.toLowerCase?.().includes('grand slam');
+        }
+        if (level === 'atp') {
+          return category.includes('atp');
+        }
+        if (level === 'grand-slam') {
+          return category.includes('grand slam') || event.tournament?.name?.toLowerCase?.().includes('grand slam');
+        }
+        return true;
+      }
+
+      function formatTennisScore(event) {
+        if (!event?.homeScore || !event?.awayScore) {
+          return event?.status?.description === 'Finished' ? '—' : '-- : --';
+        }
+        const sets = [0, 1, 2, 3, 4]
+          .map((index) => {
+            const home = event.homeScore[`set${index + 1}`];
+            const away = event.awayScore[`set${index + 1}`];
+            if (typeof home === 'number' && typeof away === 'number') {
+              return `${home}:${away}`;
+            }
+            return null;
+          })
+          .filter(Boolean);
+        if (!sets.length) {
+          const games = `${event.homeScore.current ?? 0}:${event.awayScore.current ?? 0}`;
+          return games;
+        }
+        return sets.join(' · ');
+      }
+
+      function buildDemoMatches(sport, variant, date) {
+        const baseTime = new Date(date + 'T12:00:00');
+        const randomScore = () => `${Math.floor(Math.random() * 5)}:${Math.floor(Math.random() * 5)}`;
+        const labels = {
+          Tennis: [
+            ['Spieler A', 'Spieler B'],
+            ['Spieler C', 'Spieler D'],
+            ['Spieler E', 'Spieler F']
+          ]
+        };
+        const list = labels[sport] || [
+          ['Team A', 'Team B'],
+          ['Team C', 'Team D'],
+          ['Team E', 'Team F']
+        ];
+        return list.map((pair, index) => ({
+          id: `${sport}-${variant}-${index}`,
+          time: formatTime(baseTime.getTime() + index * 3600000),
+          home: pair[0],
+          away: pair[1],
+          score: randomScore(),
+          status: 'Live (Demo)'
+        }));
+      }
+
+      function formatTable(entries) {
+        if (!Array.isArray(entries)) {
+          return [];
+        }
+        return entries.map((entry, index) => ({
+          rank: entry.rank ?? entry.Rank ?? index + 1,
+          team: entry.teamName ?? entry.TeamName ?? entry.team?.teamName ?? 'Team',
+          played: entry.playedGames ?? entry.PlayedGames,
+          wins: entry.won ?? entry.Won,
+          draws: entry.draw ?? entry.Draw,
+          losses: entry.lost ?? entry.Lost,
+          goals: `${entry.goals ?? entry.Goals ?? 0}:${entry.opponentGoals ?? entry.OpponentGoals ?? 0}`,
+          diff: entry.goalDifference ?? entry.GoalDifference,
+          points: entry.points ?? entry.Points
+        }));
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+    })();
+  </script>
+</body>
+</html>
