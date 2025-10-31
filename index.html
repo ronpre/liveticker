@@ -106,9 +106,10 @@
 
     .matchday-group {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 0.35rem;
       width: 100%;
+      align-items: stretch;
     }
 
     .matchday-button {
@@ -119,10 +120,19 @@
       color: var(--text);
       background: rgba(15, 23, 42, 0.7);
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       text-align: center;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .matchday-button.arrow-button {
+      font-size: 1.3rem;
+      line-height: 1;
+      padding: 0.5rem 0;
     }
 
     .matchday-button:focus-visible {
@@ -134,6 +144,28 @@
     .matchday-button[disabled] {
       opacity: 0.7;
       cursor: default;
+    }
+
+    .matchday-select {
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      padding: 0.5rem 0.7rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.7);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      text-align: center;
+      appearance: none;
+      -webkit-appearance: none;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .matchday-select:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
     }
 
     #status-box {
@@ -286,9 +318,9 @@
       <div class="control">
         <label for="matchday-current">Spieltag</label>
         <div class="matchday-group" id="matchday-group" role="group" aria-label="Spieltag auswählen">
-          <button type="button" id="matchday-prev" class="matchday-button"></button>
-          <button type="button" id="matchday-current" class="matchday-button" aria-pressed="true"></button>
-          <button type="button" id="matchday-next" class="matchday-button"></button>
+          <button type="button" id="matchday-prev" class="matchday-button arrow-button" aria-label="Vorheriger Spieltag"></button>
+          <select id="matchday-current" class="matchday-select" aria-label="Aktueller Spieltag"></select>
+          <button type="button" id="matchday-next" class="matchday-button arrow-button" aria-label="Nächster Spieltag"></button>
         </div>
       </div>
     </section>
@@ -371,6 +403,8 @@
         league: null,
         tennisCategory: 'all',
         date: defaultDate,
+        matchdays: [],
+        activeMatchdayOrder: null,
         timerId: null,
         lastFetchStart: 0,
         fetchInFlight: false,
@@ -379,7 +413,7 @@
 
       const cache = new Map();
 
-  updateMatchdayDisplay();
+    updateMatchdayDisplay();
 
       const FOOTBALL_LEAGUES = [
         {
@@ -467,7 +501,7 @@
           DOM.matchdayNext.addEventListener('click', () => shiftMatchday(1));
         }
         if (DOM.matchdayCurrent) {
-          DOM.matchdayCurrent.addEventListener('click', resetMatchdayToToday);
+          DOM.matchdayCurrent.addEventListener('change', onMatchdaySelect);
         }
         window.addEventListener('focus', () => requestRefresh(true));
 
@@ -492,6 +526,11 @@
 
       function onSportChange(event) {
         state.sport = event.target.value;
+        if (state.sport !== 'football') {
+          state.matchdays = [];
+          state.activeMatchdayOrder = null;
+          updateMatchdayDisplay();
+        }
         if (state.sport === 'football') {
           state.league = state.league || FOOTBALL_LEAGUES[0].id;
         } else if (state.sport === 'tennis') {
@@ -516,28 +555,73 @@
         if (!Number.isFinite(offsetDays)) {
           return;
         }
-        const targetDate = offsetMatchday(state.date, offsetDays);
-        if (targetDate === state.date) {
+        const targetDate = deriveTargetMatchdayDate(offsetDays);
+        if (!targetDate || targetDate === state.date) {
           return;
         }
-        updateMatchdayState(targetDate);
+        const targetMatchday = resolveMatchdayOrderByDate(targetDate);
+        updateMatchdayState(targetDate, targetMatchday);
+        requestRefresh(true);
+      }
+
+      function onMatchdaySelect(event) {
+        const select = event.target;
+        if (!select || !select.value) {
+          return;
+        }
+        const rawOrder = select.options[select.selectedIndex]?.dataset.matchdayOrder;
+        const parsedOrder = rawOrder ? Number.parseInt(rawOrder, 10) : null;
+        const matchdayOrder = Number.isNaN(parsedOrder) ? null : parsedOrder;
+        if (select.value === state.date && (matchdayOrder == null || matchdayOrder === state.activeMatchdayOrder)) {
+          return;
+        }
+        updateMatchdayState(select.value, matchdayOrder == null ? undefined : matchdayOrder);
         requestRefresh(true);
       }
 
       function resetMatchdayToToday() {
         const todayIso = new Date().toISOString().slice(0, 10);
-        if (todayIso === state.date) {
+        const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+        let targetDate = todayIso;
+        let targetOrder;
+        if (matchdays.length) {
+          const indexToday = resolveMatchdayIndexByDate(todayIso, matchdays);
+          if (indexToday !== -1) {
+            targetDate = matchdays[indexToday].primaryDate;
+            targetOrder = matchdays[indexToday].order;
+          } else {
+            const closest = findClosestMatchdayIndex(todayIso, matchdays);
+            if (closest !== -1) {
+              targetDate = matchdays[closest].primaryDate;
+              targetOrder = matchdays[closest].order;
+            }
+          }
+        }
+        if (targetDate === state.date && (targetOrder == null || targetOrder === state.activeMatchdayOrder)) {
           return;
         }
-        updateMatchdayState(todayIso);
+        updateMatchdayState(targetDate, targetOrder);
         requestRefresh(true);
       }
 
-      function updateMatchdayState(newDate) {
-        if (!newDate) {
+      function updateMatchdayState(newDate, matchdayOrderOverride) {
+        const normalized = normalizeToIsoDate(newDate);
+        if (!normalized) {
           return;
         }
-        state.date = newDate;
+        let nextOrder = matchdayOrderOverride;
+        const index = resolveMatchdayIndexByDate(normalized, state.matchdays || []);
+        if ((nextOrder == null || Number.isNaN(nextOrder)) && index !== -1) {
+          nextOrder = state.matchdays[index]?.order;
+        }
+        const orderChanged = typeof nextOrder === 'number' && nextOrder !== state.activeMatchdayOrder;
+        if (normalized === state.date && !orderChanged) {
+          return;
+        }
+        state.date = normalized;
+        if (typeof nextOrder === 'number' && !Number.isNaN(nextOrder)) {
+          state.activeMatchdayOrder = nextOrder;
+        }
         updateMatchdayDisplay();
       }
 
@@ -545,26 +629,279 @@
         if (!DOM.matchdayCurrent) {
           return;
         }
-        const currentLabel = formatDateForLocale(state.date) || state.date;
-        DOM.matchdayCurrent.textContent = currentLabel;
-        DOM.matchdayCurrent.setAttribute('aria-pressed', 'true');
-        DOM.matchdayCurrent.title = currentLabel;
+        const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+        const select = DOM.matchdayCurrent;
+        select.innerHTML = '';
 
-        const prevDate = offsetMatchday(state.date, -1);
-        const nextDate = offsetMatchday(state.date, 1);
+        if (matchdays.length) {
+          const activeOrder = determineActiveMatchdayOrder(matchdays);
+          matchdays.forEach((entry) => {
+            const option = document.createElement('option');
+            option.value = entry.primaryDate;
+            option.textContent = entry.label;
+            option.dataset.matchdayOrder = entry.order;
+            if (entry.dates?.length) {
+              option.dataset.dates = entry.dates.join(',');
+            }
+            if (entry.order === activeOrder) {
+              option.selected = true;
+            }
+            select.appendChild(option);
+          });
 
-        if (DOM.matchdayPrev) {
-          const prevLabel = formatDateForLocale(prevDate) || prevDate;
-          DOM.matchdayPrev.textContent = prevLabel;
-          DOM.matchdayPrev.setAttribute('data-target-date', prevDate);
-          DOM.matchdayPrev.title = prevLabel;
+          if (!select.querySelector('option[selected]') && select.options.length) {
+            select.options[0].selected = true;
+            const fallbackOrder = select.options[0].dataset.matchdayOrder ? Number.parseInt(select.options[0].dataset.matchdayOrder, 10) : null;
+            if (fallbackOrder != null && !Number.isNaN(fallbackOrder)) {
+              state.activeMatchdayOrder = fallbackOrder;
+            }
+          }
+        } else {
+          const option = document.createElement('option');
+          option.value = state.date;
+          option.textContent = formatDateForLocale(state.date) || state.date;
+          option.selected = true;
+          select.appendChild(option);
         }
-        if (DOM.matchdayNext) {
-          const nextLabel = formatDateForLocale(nextDate) || nextDate;
-          DOM.matchdayNext.textContent = nextLabel;
-          DOM.matchdayNext.setAttribute('data-target-date', nextDate);
-          DOM.matchdayNext.title = nextLabel;
+
+        const prevNeighbor = computeMatchdayNeighbor(-1);
+        const nextNeighbor = computeMatchdayNeighbor(1);
+
+        applyArrowState(DOM.matchdayPrev, prevNeighbor, '<', 'Vorheriger Spieltag');
+        applyArrowState(DOM.matchdayNext, nextNeighbor, '>', 'Nächster Spieltag');
+      }
+
+      function determineActiveMatchdayOrder(matchdays) {
+        if (!matchdays.length) {
+          return null;
         }
+        if (state.activeMatchdayOrder != null && matchdays.some((entry) => entry.order === state.activeMatchdayOrder)) {
+          return state.activeMatchdayOrder;
+        }
+        const indexByDate = resolveMatchdayIndexByDate(state.date, matchdays);
+        if (indexByDate !== -1) {
+          const order = matchdays[indexByDate].order;
+          state.activeMatchdayOrder = order;
+          return order;
+        }
+        const closestIndex = findClosestMatchdayIndex(state.date, matchdays);
+        if (closestIndex !== -1) {
+          const order = matchdays[closestIndex].order;
+          state.activeMatchdayOrder = order;
+          return order;
+        }
+        return null;
+      }
+
+      function computeMatchdayNeighbor(offset) {
+        const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+        if (!matchdays.length) {
+          const fallbackDate = offsetMatchday(state.date, offset);
+          if (!fallbackDate || fallbackDate === state.date) {
+            return null;
+          }
+          const label = formatDateForLocale(fallbackDate) || fallbackDate;
+          return { date: fallbackDate, label, order: null };
+        }
+        const currentIndex = getCurrentMatchdayIndex();
+        if (currentIndex == null) {
+          return null;
+        }
+        const targetIndex = currentIndex + offset;
+        if (targetIndex < 0 || targetIndex >= matchdays.length) {
+          return null;
+        }
+        const entry = matchdays[targetIndex];
+        const displayDate = formatDateForLocale(entry.primaryDate) || entry.primaryDate;
+        return {
+          date: entry.primaryDate,
+          label: entry.label || displayDate,
+          order: entry.order
+        };
+      }
+
+      function applyArrowState(button, neighbor, symbol, baseLabel) {
+        if (!button) {
+          return;
+        }
+        button.textContent = symbol;
+        if (baseLabel) {
+          button.setAttribute('aria-label', baseLabel);
+        }
+        if (neighbor) {
+          button.disabled = false;
+          button.dataset.targetDate = neighbor.date;
+          if (neighbor.order != null) {
+            button.dataset.matchdayOrder = neighbor.order;
+          } else {
+            button.removeAttribute('data-matchday-order');
+          }
+          const formattedDate = formatDateForLocale(neighbor.date) || neighbor.date;
+          if (neighbor.label && neighbor.label !== formattedDate) {
+            button.title = neighbor.label + ' (' + formattedDate + ')';
+            if (baseLabel) {
+              button.setAttribute('aria-label', baseLabel + ': ' + neighbor.label);
+            }
+          } else {
+            button.title = neighbor.label || formattedDate;
+            if (baseLabel && (neighbor.label || formattedDate)) {
+              button.setAttribute('aria-label', baseLabel + ': ' + (neighbor.label || formattedDate));
+            }
+          }
+        } else {
+          button.disabled = true;
+          button.removeAttribute('data-target-date');
+          button.removeAttribute('data-matchday-order');
+          button.title = 'Kein weiterer Spieltag';
+          if (baseLabel) {
+            button.setAttribute('aria-label', baseLabel + ' nicht verfügbar');
+          }
+        }
+      }
+
+      function deriveTargetMatchdayDate(offset) {
+        if (!Number.isFinite(offset) || offset === 0) {
+          return state.date;
+        }
+        const neighbor = computeMatchdayNeighbor(offset);
+        return neighbor?.date || state.date;
+      }
+
+      function resolveMatchdayOrderByDate(date) {
+        const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+        if (!matchdays.length || !date) {
+          return null;
+        }
+        const index = resolveMatchdayIndexByDate(date, matchdays);
+        return index !== -1 ? matchdays[index]?.order ?? null : null;
+      }
+
+      function resolveMatchdayIndexByDate(isoDate, matchdays) {
+        if (!isoDate || !Array.isArray(matchdays)) {
+          return -1;
+        }
+        return matchdays.findIndex((entry) => Array.isArray(entry.dates) && entry.dates.includes(isoDate));
+      }
+
+      function findClosestMatchdayIndex(isoDate, matchdays) {
+        if (!Array.isArray(matchdays) || !matchdays.length) {
+          return -1;
+        }
+        const reference = normalizeToIsoDate(isoDate);
+        const referenceTime = reference ? Date.parse(reference + 'T00:00:00Z') : NaN;
+        if (Number.isNaN(referenceTime)) {
+          return 0;
+        }
+        let closestIndex = -1;
+        let smallestDelta = Number.POSITIVE_INFINITY;
+        matchdays.forEach((entry, index) => {
+          if (!entry?.primaryDate) {
+            return;
+          }
+          const time = Date.parse(entry.primaryDate + 'T00:00:00Z');
+          if (Number.isNaN(time)) {
+            return;
+          }
+          const delta = Math.abs(time - referenceTime);
+          if (delta < smallestDelta) {
+            smallestDelta = delta;
+            closestIndex = index;
+          }
+        });
+        return closestIndex;
+      }
+
+      function getCurrentMatchdayIndex() {
+        const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+        if (!matchdays.length) {
+          return null;
+        }
+        if (state.activeMatchdayOrder != null) {
+          const index = matchdays.findIndex((entry) => entry.order === state.activeMatchdayOrder);
+          if (index !== -1) {
+            return index;
+          }
+        }
+        const indexByDate = resolveMatchdayIndexByDate(state.date, matchdays);
+        if (indexByDate !== -1) {
+          return indexByDate;
+        }
+        const closest = findClosestMatchdayIndex(state.date, matchdays);
+        return closest !== -1 ? closest : null;
+      }
+
+      function ensureActiveMatchday(matchdays) {
+        if (!Array.isArray(matchdays) || !matchdays.length) {
+          state.activeMatchdayOrder = null;
+          return;
+        }
+        if (state.activeMatchdayOrder != null && matchdays.some((entry) => entry.order === state.activeMatchdayOrder)) {
+          return;
+        }
+        const indexByDate = resolveMatchdayIndexByDate(state.date, matchdays);
+        if (indexByDate !== -1) {
+          state.activeMatchdayOrder = matchdays[indexByDate].order;
+          return;
+        }
+        const closestIndex = findClosestMatchdayIndex(state.date, matchdays);
+        if (closestIndex !== -1) {
+          state.activeMatchdayOrder = matchdays[closestIndex].order;
+          return;
+        }
+        state.activeMatchdayOrder = matchdays[0].order;
+      }
+
+      function buildMatchdayMetadata(matches) {
+        if (!Array.isArray(matches)) {
+          return [];
+        }
+        const grouped = new Map();
+        matches.forEach((match) => {
+          const group = match?.group || match?.Group;
+          const order = group?.groupOrderID ?? group?.GroupOrderID;
+          if (!Number.isFinite(order)) {
+            return;
+          }
+          const label = group?.groupName || group?.GroupName || order + '. Spieltag';
+          const isoDate = normalizeToIsoDate(match.matchDateTimeUTC || match.matchDateTime);
+          if (!grouped.has(order)) {
+            grouped.set(order, {
+              order,
+              label,
+              dates: new Set()
+            });
+          }
+          if (isoDate) {
+            grouped.get(order).dates.add(isoDate);
+          }
+        });
+
+        return Array.from(grouped.values())
+          .map((entry) => {
+            const dates = Array.from(entry.dates).sort();
+            return {
+              order: entry.order,
+              label: entry.label || entry.order + '. Spieltag',
+              primaryDate: dates[0] || null,
+              dates
+            };
+          })
+          .filter((entry) => entry.primaryDate)
+          .sort((a, b) => a.order - b.order);
+      }
+
+      function normalizeToIsoDate(value) {
+        if (!value) {
+          return null;
+        }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return value;
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          return null;
+        }
+        return parsed.toISOString().slice(0, 10);
       }
 
       function offsetMatchday(baseIso, deltaDays) {
@@ -702,8 +1039,19 @@
           return;
         }
 
+        if (Array.isArray(rawData)) {
+          const metadata = buildMatchdayMetadata(rawData);
+          state.matchdays = metadata;
+          ensureActiveMatchday(metadata);
+          updateMatchdayDisplay();
+        } else {
+          state.matchdays = [];
+          state.activeMatchdayOrder = null;
+          updateMatchdayDisplay();
+        }
+
         const matches = rawData
-          .filter((match) => matchesSelectedDate(match.matchDateTimeUTC || match.matchDateTime, state.date))
+          .filter((match) => matchBelongsToActiveMatchday(match))
           .map((match) => ({
             id: match.matchId || match.matchID,
             time: formatTime(match.matchDateTimeUTC || match.matchDateTime),
@@ -716,6 +1064,9 @@
         if (state.league === 'regionalliga-nord' && matches.length === 0) {
           const fallback = await loadRegionalligaNordFallback(state.date);
           if (fallback.loaded) {
+            state.matchdays = [];
+            state.activeMatchdayOrder = null;
+            updateMatchdayDisplay();
             if (fallback.overrideDate && fallback.overrideDate !== state.date) {
               updateMatchdayState(fallback.overrideDate);
             }
@@ -867,6 +1218,19 @@
         const target = typeof dateValue === 'number' ? new Date(dateValue) : new Date(dateValue);
         const normalized = target.toISOString().slice(0, 10);
         return normalized === selectedDate;
+      }
+
+      function matchBelongsToActiveMatchday(match) {
+        if (!match) {
+          return false;
+        }
+        const group = match.group || match.Group;
+        const rawOrder = group?.groupOrderID ?? group?.GroupOrderID;
+        const matchdayOrder = rawOrder != null ? Number.parseInt(rawOrder, 10) : NaN;
+        if (typeof state.activeMatchdayOrder === 'number' && Number.isFinite(state.activeMatchdayOrder) && Number.isFinite(matchdayOrder)) {
+          return matchdayOrder === state.activeMatchdayOrder;
+        }
+        return matchesSelectedDate(match.matchDateTimeUTC || match.matchDateTime, state.date);
       }
 
       function deriveFootballSeason(dateStr) {
