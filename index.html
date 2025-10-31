@@ -155,11 +155,6 @@
       background: var(--card);
     }
 
-    #results-table.hide-time-col th:first-child,
-    #results-table.hide-time-col td:first-child {
-      display: none;
-    }
-
     thead {
       background: rgba(148, 163, 184, 0.08);
     }
@@ -181,12 +176,6 @@
       font-style: italic;
       color: var(--muted);
       padding: 0.85rem;
-    }
-
-    th:nth-child(1),
-    td:nth-child(1) {
-      width: 70px;
-      font-feature-settings: "tnum";
     }
 
     td.score {
@@ -277,7 +266,6 @@
         <table id="results-table">
           <thead>
             <tr>
-              <th>Zeit</th>
               <th>Heim</th>
               <th>Gast</th>
               <th>Ergebnis</th>
@@ -298,7 +286,6 @@
             <tr>
               <th>Rang</th>
               <th>Team</th>
-              <th>Spiele</th>
               <th>S</th>
               <th>U</th>
               <th>N</th>
@@ -683,17 +670,11 @@
           setStatus('Keine öffentlichen Tennis-Daten verfügbar – zeige Demo-Ergebnisse' + detail, 'warning');
         }
 
-  renderMatches(matches, 'Keine Tennisbegegnungen für den gewählten Tag gefunden.');
-  hideTable();
+        renderMatches(matches, 'Keine Tennisbegegnungen für den gewählten Tag gefunden.');
+        hideTable();
       }
 
       function renderMatches(matches, emptyMessage) {
-        if (state.sport === 'tennis') {
-          DOM.resultsTable.classList.add('hide-time-col');
-        } else {
-          DOM.resultsTable.classList.remove('hide-time-col');
-        }
-
         DOM.resultsBody.innerHTML = '';
         if (!matches || !matches.length) {
           DOM.noResults.textContent = emptyMessage || 'Keine Ergebnisse für den gewählten Tag gefunden.';
@@ -707,7 +688,6 @@
           .forEach((match) => {
             const row = document.createElement('tr');
             row.innerHTML = `
-              <td>${match.time}</td>
               <td>${escapeHtml(match.home)}</td>
               <td>${escapeHtml(match.away)}</td>
               <td class="score">${escapeHtml(match.score)}</td>
@@ -729,7 +709,7 @@
         if (!rows || !rows.length) {
           const emptyRow = document.createElement('tr');
           emptyRow.className = 'standings-empty';
-          emptyRow.innerHTML = `<td colspan="9">${escapeHtml(emptyMessage)}</td>`;
+          emptyRow.innerHTML = `<td colspan="8">${escapeHtml(emptyMessage)}</td>`;
           DOM.standingsBody.appendChild(emptyRow);
           return;
         }
@@ -739,7 +719,6 @@
           tr.innerHTML = `
             <td>${entry.rank ?? '-'}</td>
             <td>${escapeHtml(entry.team ?? '')}</td>
-            <td>${entry.played ?? '-'}</td>
             <td>${entry.wins ?? '-'}</td>
             <td>${entry.draws ?? '-'}</td>
             <td>${entry.losses ?? '-'}</td>
@@ -1093,7 +1072,6 @@
           return {
             rank: entry.rank ?? entry.position ?? index + 1,
             team: entry.team ?? entry.teamName ?? entry.name ?? 'Team',
-            played: entry.played ?? entry.playedGames ?? entry.games ?? entry.matches ?? null,
             wins: entry.wins ?? entry.win ?? entry.won ?? null,
             draws: entry.draws ?? entry.draw ?? entry.ties ?? null,
             losses: entry.losses ?? entry.loss ?? entry.lost ?? null,
@@ -1174,7 +1152,6 @@
         return entries.map((entry, index) => ({
           rank: entry.rank ?? entry.Rank ?? index + 1,
           team: entry.teamName ?? entry.TeamName ?? entry.team?.teamName ?? 'Team',
-          played: entry.playedGames ?? entry.PlayedGames,
           wins: entry.won ?? entry.Won,
           draws: entry.draw ?? entry.Draw,
           losses: entry.lost ?? entry.Lost,
