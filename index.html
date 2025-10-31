@@ -1083,6 +1083,14 @@
 
         renderMatches(matches, 'Keine Spiele für den ausgewählten Tag gefunden.');
 
+        const allMatchesPlanned = matches.length > 0 && matches.every((entry) => entry.status === 'Geplant');
+
+        if (leagueConfig.table && allMatchesPlanned) {
+          renderTable([], { emptyMessage: 'Tabelle wird nach Abschluss des Spieltags aktualisiert.' });
+          setStatus('Für diesen Spieltag liegen noch keine Tabellenwerte vor.', 'info');
+          return;
+        }
+
         if (leagueConfig.table) {
           const matchday = deriveMatchday(rawData, matches) || (await fetchCurrentGroup(leagueConfig.shortcut, season));
           const tableResult = await resolveFootballTable(leagueConfig.shortcut, season, matchday);
