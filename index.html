@@ -104,6 +104,38 @@
       box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
     }
 
+    .matchday-group {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.35rem;
+      width: 100%;
+    }
+
+    .matchday-button {
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      padding: 0.5rem 0.7rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.7);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .matchday-button:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+    }
+
+    .matchday-button[disabled] {
+      opacity: 0.7;
+      cursor: default;
+    }
+
     #status-box {
       padding: 0.65rem 0.9rem;
       border-radius: 0.7rem;
@@ -252,8 +284,12 @@
       </div>
 
       <div class="control">
-        <label for="date-input">Datum</label>
-        <input type="date" id="date-input">
+        <label for="matchday-current">Spieltag</label>
+        <div class="matchday-group" id="matchday-group" role="group" aria-label="Spieltag auswählen">
+          <button type="button" id="matchday-prev" class="matchday-button"></button>
+          <button type="button" id="matchday-current" class="matchday-button" aria-pressed="true"></button>
+          <button type="button" id="matchday-next" class="matchday-button"></button>
+        </div>
       </div>
     </section>
 
@@ -315,7 +351,10 @@
         sportSelect: document.getElementById('sport-select'),
         leagueControl: document.getElementById('league-control'),
         leagueSelect: document.getElementById('league-select'),
-        dateInput: document.getElementById('date-input'),
+        matchdayGroup: document.getElementById('matchday-group'),
+        matchdayPrev: document.getElementById('matchday-prev'),
+        matchdayCurrent: document.getElementById('matchday-current'),
+        matchdayNext: document.getElementById('matchday-next'),
         statusBox: document.getElementById('status-box'),
         resultsTable: document.getElementById('results-table'),
         resultsBody: document.querySelector('#results-table tbody'),
@@ -326,7 +365,6 @@
 
       const today = new Date();
       const defaultDate = today.toISOString().slice(0, 10);
-      DOM.dateInput.value = defaultDate;
 
       const state = {
         sport: 'football',
@@ -340,6 +378,8 @@
       };
 
       const cache = new Map();
+
+  updateMatchdayDisplay();
 
       const FOOTBALL_LEAGUES = [
         {
@@ -420,7 +460,15 @@
         populateLeagueOptions();
         DOM.sportSelect.addEventListener('change', onSportChange);
         DOM.leagueSelect.addEventListener('change', onLeagueChange);
-        DOM.dateInput.addEventListener('change', onDateChange);
+        if (DOM.matchdayPrev) {
+          DOM.matchdayPrev.addEventListener('click', () => shiftMatchday(-1));
+        }
+        if (DOM.matchdayNext) {
+          DOM.matchdayNext.addEventListener('click', () => shiftMatchday(1));
+        }
+        if (DOM.matchdayCurrent) {
+          DOM.matchdayCurrent.addEventListener('click', resetMatchdayToToday);
+        }
         window.addEventListener('focus', () => requestRefresh(true));
 
         requestRefresh(true);
@@ -464,9 +512,68 @@
         requestRefresh(true);
       }
 
-      function onDateChange(event) {
-        state.date = event.target.value;
+      function shiftMatchday(offsetDays) {
+        if (!Number.isFinite(offsetDays)) {
+          return;
+        }
+        const targetDate = offsetMatchday(state.date, offsetDays);
+        if (targetDate === state.date) {
+          return;
+        }
+        updateMatchdayState(targetDate);
         requestRefresh(true);
+      }
+
+      function resetMatchdayToToday() {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        if (todayIso === state.date) {
+          return;
+        }
+        updateMatchdayState(todayIso);
+        requestRefresh(true);
+      }
+
+      function updateMatchdayState(newDate) {
+        if (!newDate) {
+          return;
+        }
+        state.date = newDate;
+        updateMatchdayDisplay();
+      }
+
+      function updateMatchdayDisplay() {
+        if (!DOM.matchdayCurrent) {
+          return;
+        }
+        const currentLabel = formatDateForLocale(state.date) || state.date;
+        DOM.matchdayCurrent.textContent = currentLabel;
+        DOM.matchdayCurrent.setAttribute('aria-pressed', 'true');
+        DOM.matchdayCurrent.title = currentLabel;
+
+        const prevDate = offsetMatchday(state.date, -1);
+        const nextDate = offsetMatchday(state.date, 1);
+
+        if (DOM.matchdayPrev) {
+          const prevLabel = formatDateForLocale(prevDate) || prevDate;
+          DOM.matchdayPrev.textContent = prevLabel;
+          DOM.matchdayPrev.setAttribute('data-target-date', prevDate);
+          DOM.matchdayPrev.title = prevLabel;
+        }
+        if (DOM.matchdayNext) {
+          const nextLabel = formatDateForLocale(nextDate) || nextDate;
+          DOM.matchdayNext.textContent = nextLabel;
+          DOM.matchdayNext.setAttribute('data-target-date', nextDate);
+          DOM.matchdayNext.title = nextLabel;
+        }
+      }
+
+      function offsetMatchday(baseIso, deltaDays) {
+        const reference = baseIso ? new Date(baseIso + 'T00:00:00Z') : new Date();
+        if (Number.isNaN(reference.getTime())) {
+          return baseIso;
+        }
+        reference.setUTCDate(reference.getUTCDate() + deltaDays);
+        return reference.toISOString().slice(0, 10);
       }
 
       function populateLeagueOptions() {
@@ -554,8 +661,7 @@
           if (state.league === 'regionalliga-nord') {
             const fallback = await loadRegionalligaNordFallback(state.date);
             if (fallback.overrideDate && fallback.overrideDate !== state.date) {
-              state.date = fallback.overrideDate;
-              DOM.dateInput.value = fallback.overrideDate;
+              updateMatchdayState(fallback.overrideDate);
             }
             if (fallback.loaded) {
               renderMatches(fallback.matches, fallback.emptyMessage);
@@ -594,6 +700,9 @@
         if (state.league === 'regionalliga-nord' && matches.length === 0) {
           const fallback = await loadRegionalligaNordFallback(state.date);
           if (fallback.loaded) {
+            if (fallback.overrideDate && fallback.overrideDate !== state.date) {
+              updateMatchdayState(fallback.overrideDate);
+            }
             renderMatches(fallback.matches, fallback.emptyMessage);
             if (fallback.table?.length) {
               renderTable(fallback.table);
@@ -605,7 +714,7 @@
           }
         }
 
-  renderMatches(matches, 'Keine Spiele für den ausgewählten Tag gefunden.');
+        renderMatches(matches, 'Keine Spiele für den ausgewählten Tag gefunden.');
 
         if (leagueConfig.table) {
           const matchday = deriveMatchday(rawData, matches) || (await fetchCurrentGroup(leagueConfig.shortcut, season));
@@ -684,7 +793,7 @@
         DOM.noResults.classList.add('hidden');
 
         matches
-          .sort((a, b) => a.time.localeCompare(b.time) || a.home.localeCompare(b.home))
+          .sort((a, b) => (a.time || '').localeCompare(b.time || '') || a.home.localeCompare(b.home))
           .forEach((match) => {
             const row = document.createElement('tr');
             row.innerHTML = `
