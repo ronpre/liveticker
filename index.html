@@ -471,206 +471,97 @@ ewogICJsYXN0VXBkYXRlZCI6ICIyMDI1LTExLTE2VDA5OjAwOjAwKzAxOjAwIiwKICAic291cmNlIjog
 
       */
       const REGIONALLIGA_NORD_INLINE = (() => {
-        const fallback = {
-          lastUpdated: '2025-11-16T09:00:00+01:00',
-          source: 'Regionalliga Nord – Inline-Fallback (Kurzfassung)',
-          matches: [
-            {
-              id: 'RLN-2025-MD01-01',
-              matchday: 1,
-              kickoff: '2025-08-02T14:00:00+02:00',
-              home: 'Weiche Flensburg 08',
-              away: 'Werder Bremen II',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-02',
-              matchday: 1,
-              kickoff: '2025-08-02T15:00:00+02:00',
-              home: 'Eintracht Norderstedt',
-              away: 'SV Drochtersen/Assel',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-03',
-              matchday: 1,
-              kickoff: '2025-08-02T16:00:00+02:00',
-              home: 'Hamburger SV II',
-              away: 'Teutonia Ottensen',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-04',
-              matchday: 1,
-              kickoff: '2025-08-02T17:00:00+02:00',
-              home: 'SSV Jeddeloh',
-              away: 'VfB Oldenburg',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-05',
-              matchday: 1,
-              kickoff: '2025-08-02T18:00:00+02:00',
-              home: 'VfB Lübeck',
-              away: 'Altona 93',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-06',
-              matchday: 1,
-              kickoff: '2025-08-02T19:00:00+02:00',
-              home: 'Phönix Lübeck',
-              away: 'SV Meppen',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-07',
-              matchday: 1,
-              kickoff: '2025-08-02T20:00:00+02:00',
-              home: 'Eimsbütteler TV',
-              away: 'Hannover 96 II',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-08',
-              matchday: 1,
-              kickoff: '2025-08-02T21:00:00+02:00',
-              home: 'FC St. Pauli II',
-              away: 'BW Lohne',
-              score: '-:-',
-              status: 'Geplant'
-            },
-            {
-              id: 'RLN-2025-MD01-09',
-              matchday: 1,
-              kickoff: '2025-08-02T22:00:00+02:00',
-              home: 'Holstein Kiel II',
-              away: 'Bremer SV',
-              score: '-:-',
-              status: 'Geplant'
+        const teams = [
+          'Weiche Flensburg 08',
+          'SV Meppen',
+          'VfB Lübeck',
+          'Werder Bremen II',
+          'SV Drochtersen/Assel',
+          'Hannover 96 II',
+          'Holstein Kiel II',
+          'VfB Oldenburg',
+          'FC St. Pauli II',
+          'Eintracht Norderstedt',
+          'Hamburger SV II',
+          'Phönix Lübeck',
+          'Altona 93',
+          'SSV Jeddeloh',
+          'BW Lohne',
+          'Bremer SV',
+          'Teutonia Ottensen',
+          'Eimsbütteler TV'
+        ];
+
+        // Generate a double round-robin so the inline fallback covers all 34 matchdays without shipping megabytes of JSON.
+        const buildRoundRobin = (teamList) => {
+          const list = [...teamList];
+          const rounds = teamList.length - 1;
+          const pairingsPerRound = [];
+          for (let round = 0; round < rounds; round += 1) {
+            const roundPairings = [];
+            const half = teamList.length / 2;
+            for (let index = 0; index < half; index += 1) {
+              let home = list[index];
+              let away = list[list.length - 1 - index];
+              if (index === 0 && round % 2 === 1) {
+                [home, away] = [away, home];
+              }
+              roundPairings.push({ home, away });
             }
-          ],
-          table: [
-            {
-              rank: 1,
-              team: 'Weiche Flensburg 08',
-              played: 12,
-              wins: 9,
-              draws: 2,
-              losses: 1,
-              goalsFor: 30,
-              goalsAgainst: 12,
-              points: 29
-            },
-            {
-              rank: 2,
-              team: 'SV Meppen',
-              played: 12,
-              wins: 8,
-              draws: 3,
-              losses: 1,
-              goalsFor: 27,
-              goalsAgainst: 14,
-              points: 27
-            },
-            {
-              rank: 3,
-              team: 'VfB Lübeck',
-              played: 12,
-              wins: 7,
-              draws: 4,
-              losses: 1,
-              goalsFor: 24,
-              goalsAgainst: 13,
-              points: 25
-            },
-            {
-              rank: 4,
-              team: 'Werder Bremen II',
-              played: 12,
-              wins: 6,
-              draws: 4,
-              losses: 2,
-              goalsFor: 23,
-              goalsAgainst: 15,
-              points: 22
-            },
-            {
-              rank: 5,
-              team: 'SV Drochtersen/Assel',
-              played: 12,
-              wins: 6,
-              draws: 3,
-              losses: 3,
-              goalsFor: 19,
-              goalsAgainst: 14,
-              points: 21
-            },
-            {
-              rank: 6,
-              team: 'Hannover 96 II',
-              played: 12,
-              wins: 6,
-              draws: 2,
-              losses: 4,
-              goalsFor: 22,
-              goalsAgainst: 19,
-              points: 20
-            },
-            {
-              rank: 7,
-              team: 'Holstein Kiel II',
-              played: 12,
-              wins: 5,
-              draws: 4,
-              losses: 3,
-              goalsFor: 21,
-              goalsAgainst: 18,
-              points: 19
-            },
-            {
-              rank: 8,
-              team: 'VfB Oldenburg',
-              played: 12,
-              wins: 5,
-              draws: 3,
-              losses: 4,
-              goalsFor: 18,
-              goalsAgainst: 17,
-              points: 18
-            },
-            {
-              rank: 9,
-              team: 'FC St. Pauli II',
-              played: 12,
-              wins: 4,
-              draws: 4,
-              losses: 4,
-              goalsFor: 17,
-              goalsAgainst: 18,
-              points: 16
-            },
-            {
-              rank: 10,
-              team: 'Eintracht Norderstedt',
-              played: 12,
-              wins: 4,
-              draws: 3,
-              losses: 5,
-              goalsFor: 16,
-              goalsAgainst: 19,
-              points: 15
-            }
-          ]
+            pairingsPerRound.push(roundPairings);
+            list.splice(1, 0, list.pop());
+          }
+          return pairingsPerRound;
         };
-        return fallback;
+
+        const kickoffFor = (roundIndex, slotIndex) => {
+          const kickoff = new Date(Date.UTC(2025, 7, 2, 12, 0, 0));
+          kickoff.setUTCDate(kickoff.getUTCDate() + roundIndex * 7);
+          kickoff.setUTCHours(12 + slotIndex, 0, 0, 0);
+          return kickoff.toISOString().replace('.000Z', 'Z');
+        };
+
+        const firstLeg = buildRoundRobin(teams);
+        const secondLeg = firstLeg.map((pairings) => pairings.map(({ home, away }) => ({ home: away, away: home })));
+        const allRounds = [...firstLeg, ...secondLeg];
+
+        const matches = allRounds.flatMap((roundPairings, roundIndex) => roundPairings.map((pairing, pairingIndex) => ({
+          id: `RLN-2025-MD${String(roundIndex + 1).padStart(2, '0')}-${String(pairingIndex + 1).padStart(2, '0')}`,
+          matchday: roundIndex + 1,
+          kickoff: kickoffFor(roundIndex, pairingIndex),
+          home: pairing.home,
+          away: pairing.away,
+          score: '-:-',
+          status: 'Geplant'
+        })));
+
+        const table = [
+          { rank: 1, team: 'Weiche Flensburg 08', played: 12, wins: 9, draws: 2, losses: 1, goalsFor: 30, goalsAgainst: 12, points: 29 },
+          { rank: 2, team: 'SV Meppen', played: 12, wins: 8, draws: 3, losses: 1, goalsFor: 27, goalsAgainst: 14, points: 27 },
+          { rank: 3, team: 'VfB Lübeck', played: 12, wins: 7, draws: 4, losses: 1, goalsFor: 24, goalsAgainst: 13, points: 25 },
+          { rank: 4, team: 'Werder Bremen II', played: 12, wins: 6, draws: 4, losses: 2, goalsFor: 23, goalsAgainst: 15, points: 22 },
+          { rank: 5, team: 'SV Drochtersen/Assel', played: 12, wins: 6, draws: 3, losses: 3, goalsFor: 19, goalsAgainst: 14, points: 21 },
+          { rank: 6, team: 'Hannover 96 II', played: 12, wins: 6, draws: 2, losses: 4, goalsFor: 22, goalsAgainst: 19, points: 20 },
+          { rank: 7, team: 'Holstein Kiel II', played: 12, wins: 5, draws: 4, losses: 3, goalsFor: 21, goalsAgainst: 18, points: 19 },
+          { rank: 8, team: 'VfB Oldenburg', played: 12, wins: 5, draws: 3, losses: 4, goalsFor: 18, goalsAgainst: 17, points: 18 },
+          { rank: 9, team: 'FC St. Pauli II', played: 12, wins: 4, draws: 4, losses: 4, goalsFor: 17, goalsAgainst: 18, points: 16 },
+          { rank: 10, team: 'Eintracht Norderstedt', played: 12, wins: 4, draws: 3, losses: 5, goalsFor: 16, goalsAgainst: 19, points: 15 },
+          { rank: 11, team: 'Hamburger SV II', played: 12, wins: 4, draws: 2, losses: 6, goalsFor: 18, goalsAgainst: 21, points: 14 },
+          { rank: 12, team: 'Phönix Lübeck', played: 12, wins: 3, draws: 4, losses: 5, goalsFor: 14, goalsAgainst: 19, points: 13 },
+          { rank: 13, team: 'Altona 93', played: 12, wins: 3, draws: 3, losses: 6, goalsFor: 15, goalsAgainst: 22, points: 12 },
+          { rank: 14, team: 'SSV Jeddeloh', played: 12, wins: 2, draws: 5, losses: 5, goalsFor: 13, goalsAgainst: 18, points: 11 },
+          { rank: 15, team: 'BW Lohne', played: 12, wins: 2, draws: 4, losses: 6, goalsFor: 11, goalsAgainst: 20, points: 10 },
+          { rank: 16, team: 'Bremer SV', played: 12, wins: 2, draws: 3, losses: 7, goalsFor: 12, goalsAgainst: 24, points: 9 },
+          { rank: 17, team: 'Teutonia Ottensen', played: 12, wins: 2, draws: 2, losses: 8, goalsFor: 10, goalsAgainst: 25, points: 8 },
+          { rank: 18, team: 'Eimsbütteler TV', played: 12, wins: 1, draws: 3, losses: 8, goalsFor: 9, goalsAgainst: 26, points: 6 }
+        ];
+
+        return {
+          lastUpdated: '2025-11-16T09:00:00+01:00',
+          source: 'Regionalliga Nord – synthetischer Spielplan (Generator)',
+          matches,
+          table
+        };
       })();
 
       const TENNIS_LEVELS = [
