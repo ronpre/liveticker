@@ -373,6 +373,34 @@
 
       const cache = new Map();
 
+      function getCacheEntry(key, ttl) {
+        if (!key || !cache.has(key)) {
+          return null;
+        }
+        const entry = cache.get(key);
+        if (ttl && ttl > 0) {
+          if (Date.now() - entry.timestamp > ttl) {
+            cache.delete(key);
+            return null;
+          }
+        }
+        return entry.value;
+      }
+
+      function setCacheEntry(key, value) {
+        if (!key) {
+          return;
+        }
+        cache.set(key, { value, timestamp: Date.now() });
+      }
+
+      function deleteCacheEntry(key) {
+        if (!key) {
+          return;
+        }
+        cache.delete(key);
+      }
+
       function decodeBase64Json(base64Text) {
         if (!base64Text) {
           return null;
@@ -407,15 +435,13 @@
       }
 
       async function fetchTextWithCache(url, { cacheKey, ttl = 60000, headers } = {}) {
-        if (cacheKey && cache.has(cacheKey)) {
-          const entry = cache.get(cacheKey);
-          if (Date.now() - entry.timestamp < ttl) {
-            return entry.value;
-          }
+        const cached = cacheKey ? getCacheEntry(cacheKey, ttl) : null;
+        if (cached != null) {
+          return cached;
         }
         const value = await fetchText(url, { headers });
         if (cacheKey) {
-          cache.set(cacheKey, { value, timestamp: Date.now() });
+          setCacheEntry(cacheKey, value);
         }
         return value;
       }
@@ -1048,38 +1074,57 @@
 
       async function fetchBadmintonHtml() {
         const cacheKey = BADMINTON_SOURCE.cacheKey;
-        const cached = cache.get(cacheKey);
-        const now = Date.now();
-        if (cached && now - cached.timestamp < BADMINTON_SOURCE.ttl && cached.value?.html) {
-          return cached.value;
+        const ttl = BADMINTON_SOURCE.ttl;
+        const bundleCached = getCacheEntry(cacheKey, ttl);
+        if (bundleCached?.html) {
+          return bundleCached;
         }
 
         let lastError = null;
         for (const candidate of BADMINTON_SOURCE.urls) {
+          const candidateKey = `badminton:url:${candidate.url}`;
+          const candidateTtl = candidate.ttl ?? ttl;
+          const cachedCandidate = getCacheEntry(candidateKey, candidateTtl);
+          if (cachedCandidate?.html) {
+            setCacheEntry(cacheKey, cachedCandidate);
+            return cachedCandidate;
+          }
+
           try {
-            const html = await fetchText(candidate.url, { timeout: 15000 });
+            const html = await fetchText(candidate.url, {
+              timeout: candidate.timeout ?? 15000,
+              headers: candidate.headers
+            });
             if (!html) {
               lastError = new Error('Leere Antwort von ' + candidate.url);
               continue;
             }
             if (/cookiewall/i.test(html)) {
               lastError = new Error('Cookie-Wall verhindert den Zugriff (' + candidate.url + ')');
+              deleteCacheEntry(candidateKey);
+              continue;
+            }
+            if (/status\s*[:=]\s*429|Too\s+Many\s+Requests/i.test(html)) {
+              lastError = new Error('Quelle meldet Rate-Limit (' + candidate.url + ')');
+              deleteCacheEntry(candidateKey);
               continue;
             }
             if (!/class\s*=\s*"ruler\s+matches"/i.test(html)) {
               lastError = new Error('Keine Match-Tabelle gefunden (' + candidate.url + ')');
+              deleteCacheEntry(candidateKey);
               continue;
             }
             const payload = { html, source: candidate.url };
-            cache.set(cacheKey, { value: payload, timestamp: now });
+            setCacheEntry(candidateKey, payload);
+            setCacheEntry(cacheKey, payload);
             return payload;
           } catch (error) {
             lastError = error;
           }
         }
 
-        if (cached && cached.value?.html) {
-          return cached.value;
+        if (bundleCached?.html) {
+          return bundleCached;
         }
         throw lastError || new Error('Badminton-Quelle nicht erreichbar');
       }
@@ -1659,15 +1704,13 @@
       }
 
       async function fetchJsonWithCache(url, { cacheKey, ttl = 60000 } = {}) {
-        if (cacheKey && cache.has(cacheKey)) {
-          const entry = cache.get(cacheKey);
-          if (Date.now() - entry.timestamp < ttl) {
-            return entry.value;
-          }
+        const cached = cacheKey ? getCacheEntry(cacheKey, ttl) : null;
+        if (cached != null) {
+          return cached;
         }
         const value = await fetchJson(url);
         if (cacheKey) {
-          cache.set(cacheKey, { value, timestamp: Date.now() });
+          setCacheEntry(cacheKey, value);
         }
         return value;
       }
