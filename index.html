@@ -628,6 +628,7 @@
         select.innerHTML = '';
 
         let nextValue = null;
+        let hasExplicitSelection = false;
 
         if (matchdays.length) {
           const activeOrder = determineActiveMatchdayOrder(matchdays);
@@ -645,11 +646,12 @@
             if (entry.order === activeOrder) {
               option.selected = true;
               nextValue = option.value;
+              hasExplicitSelection = true;
             }
             select.appendChild(option);
           });
 
-          if (!select.querySelector('option[selected]') && select.options.length) {
+          if (!hasExplicitSelection && select.options.length) {
             select.options[0].selected = true;
             const fallbackOrder = select.options[0].dataset.matchdayOrder ? Number.parseInt(select.options[0].dataset.matchdayOrder, 10) : null;
             if (fallbackOrder != null && !Number.isNaN(fallbackOrder)) {
@@ -657,9 +659,7 @@
             }
             nextValue = select.options[0].value;
           }
-          if (nextValue != null) {
-            select.value = nextValue;
-          }
+          select.value = nextValue != null ? nextValue : select.options[0]?.value ?? '';
         } else {
           const option = document.createElement('option');
           option.value = state.date;
