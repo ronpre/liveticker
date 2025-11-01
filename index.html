@@ -1602,22 +1602,24 @@ ewogICJsYXN0VXBkYXRlZCI6ICIyMDI1LTExLTE2VDA5OjAwOjAwKzAxOjAwIiwKICAic291cmNlIjog
         const inlineData = REGIONALLIGA_NORD_INLINE;
 
         if ((!matchesJson || !Array.isArray(matchesJson.matches) || !matchesJson.matches.length) && inlineData?.matches?.length) {
+          const matchesBase = (matchesJson && typeof matchesJson === 'object') ? matchesJson : {};
           matchesJson = {
-            ...matchesJson,
+            ...matchesBase,
             matches: inlineData.matches,
-            lastUpdated: matchesJson?.lastUpdated || inlineData.lastUpdated,
-            source: matchesJson?.source || inlineData.source
+            lastUpdated: matchesBase.lastUpdated || inlineData.lastUpdated,
+            source: matchesBase.source || inlineData.source
           };
           usedInlineMatches = true;
           matchesSourceUrl = matchesSourceUrl || 'inline';
         }
 
         if ((!tableJson || !Array.isArray(tableJson.table) || !tableJson.table.length) && inlineData?.table?.length) {
+          const tableBase = (tableJson && typeof tableJson === 'object') ? tableJson : {};
           tableJson = {
-            ...tableJson,
+            ...tableBase,
             table: inlineData.table,
-            lastUpdated: tableJson?.lastUpdated || inlineData.lastUpdated,
-            source: tableJson?.source || inlineData.source
+            lastUpdated: tableBase.lastUpdated || inlineData.lastUpdated,
+            source: tableBase.source || inlineData.source
           };
           usedInlineTable = true;
           tableSourceUrl = tableSourceUrl || 'inline';
