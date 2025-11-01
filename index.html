@@ -412,15 +412,15 @@
         lastUpdated: '2025-10-08T17:30:00+02:00',
         source: 'Regionalliga Nord – eingebettete Notfallquelle vom 08.10.2025',
         matches: [
-          { id: 'RLN-2025-10-08-01', kickoff: '2025-10-08T14:00:00+02:00', home: 'VfB Oldenburg', away: 'Hannover 96 II', score: '2:1', status: 'Beendet' },
-          { id: 'RLN-2025-10-08-02', kickoff: '2025-10-08T18:30:00+02:00', home: 'Weiche Flensburg 08', away: 'Holstein Kiel II', score: '3:2', status: 'Beendet' },
-          { id: 'RLN-2025-10-08-03', kickoff: '2025-10-08T19:30:00+02:00', home: 'SV Meppen', away: 'FC St. Pauli II', score: '1:1', status: 'Beendet' },
-          { id: 'RLN-2025-10-09-01', kickoff: '2025-10-09T15:00:00+02:00', home: 'SSV Jeddeloh', away: 'VfB Lübeck', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-10-09-02', kickoff: '2025-10-09T19:00:00+02:00', home: 'Eintracht Norderstedt', away: 'BW Lohne', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-10-11-01', kickoff: '2025-10-11T14:00:00+02:00', home: 'Hamburger SV II', away: 'Teutonia Ottensen', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-10-11-02', kickoff: '2025-10-11T14:00:00+02:00', home: 'Bremer SV', away: 'Eimsbütteler TV', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-10-12-01', kickoff: '2025-10-12T13:00:00+02:00', home: 'Holstein Kiel II', away: 'Hannover 96 II', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-10-12-02', kickoff: '2025-10-12T16:00:00+02:00', home: 'VfB Oldenburg', away: 'Weiche Flensburg 08', score: '-:-', status: 'Geplant' }
+          { id: 'RLN-2025-10-08-01', matchday: 11, kickoff: '2025-10-08T14:00:00+02:00', home: 'VfB Oldenburg', away: 'Hannover 96 II', score: '2:1', status: 'Beendet' },
+          { id: 'RLN-2025-10-08-02', matchday: 11, kickoff: '2025-10-08T18:30:00+02:00', home: 'Weiche Flensburg 08', away: 'Holstein Kiel II', score: '3:2', status: 'Beendet' },
+          { id: 'RLN-2025-10-08-03', matchday: 11, kickoff: '2025-10-08T19:30:00+02:00', home: 'SV Meppen', away: 'FC St. Pauli II', score: '1:1', status: 'Beendet' },
+          { id: 'RLN-2025-10-09-01', matchday: 11, kickoff: '2025-10-09T15:00:00+02:00', home: 'SSV Jeddeloh', away: 'VfB Lübeck', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-09-02', matchday: 11, kickoff: '2025-10-09T19:00:00+02:00', home: 'Eintracht Norderstedt', away: 'BW Lohne', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-11-01', matchday: 11, kickoff: '2025-10-11T14:00:00+02:00', home: 'Hamburger SV II', away: 'Teutonia Ottensen', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-11-02', matchday: 11, kickoff: '2025-10-11T14:00:00+02:00', home: 'Bremer SV', away: 'Eimsbütteler TV', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-12-01', matchday: 11, kickoff: '2025-10-12T13:00:00+02:00', home: 'Holstein Kiel II', away: 'Hannover 96 II', score: '-:-', status: 'Geplant' },
+          { id: 'RLN-2025-10-12-02', matchday: 11, kickoff: '2025-10-12T16:00:00+02:00', home: 'VfB Oldenburg', away: 'Weiche Flensburg 08', score: '-:-', status: 'Geplant' }
         ],
         table: [
           { rank: 1, team: 'Weiche Flensburg 08', played: 10, wins: 7, draws: 2, losses: 1, goalsFor: 24, goalsAgainst: 11, points: 23 },
@@ -1443,8 +1443,27 @@
           usedInlineTable = true;
         }
 
+        const parseMatchdayValue = (match) => {
+          const raw = match?.matchday ?? match?.matchDay ?? match?.round ?? match?.spieltag ?? match?.group?.order ?? match?.groupOrderID;
+          const parsed = Number.parseInt(raw, 10);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+
         const getTimestamp = (match) => match?.kickoff ?? match?.date ?? match?.datetime ?? match?.matchDate ?? null;
         const allMatches = Array.isArray(matchesJson?.matches) ? matchesJson.matches : [];
+
+        const groupedByMatchday = new Map();
+        allMatches.forEach((match) => {
+          const order = parseMatchdayValue(match);
+          if (!Number.isFinite(order)) {
+            return;
+          }
+          if (!groupedByMatchday.has(order)) {
+            groupedByMatchday.set(order, []);
+          }
+          groupedByMatchday.get(order).push(match);
+        });
+        const hasExplicitMatchday = groupedByMatchday.size > 0;
 
         const availableDates = Array.from(new Set(allMatches
           .map((match) => {
@@ -1463,7 +1482,31 @@
 
         result.availableDates = availableDates;
 
-        if (availableDates.length) {
+        if (hasExplicitMatchday) {
+          result.matchdays = Array.from(groupedByMatchday.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([order, matchesForOrder]) => {
+              const dates = Array.from(new Set(matchesForOrder
+                .map((match) => {
+                  const ts = getTimestamp(match);
+                  if (!ts) {
+                    return null;
+                  }
+                  const parsed = new Date(ts);
+                  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+                })
+                .filter(Boolean))).sort();
+              const primaryDate = dates[0] || null;
+              const dateLabel = primaryDate ? formatDateLabel(primaryDate) : '';
+              const label = dateLabel ? `${order}. Spieltag – ${dateLabel}` : `${order}. Spieltag`;
+              return {
+                order,
+                label,
+                primaryDate,
+                dates
+              };
+            });
+        } else if (availableDates.length) {
           result.matchdays = availableDates.map((isoDate, index) => {
             const displayDate = formatDateLabel(isoDate);
             const baseLabel = `${index + 1}. Spieltag`;
@@ -1484,49 +1527,87 @@
           home: match.home || match.homeTeam || 'Heim',
           away: match.away || match.awayTeam || 'Gast',
           score: match.score ?? match.result ?? '-- : --',
-          status: match.status || match.phase || 'Geplant'
+          status: match.status || match.phase || 'Geplant',
+          matchday: parseMatchdayValue(match)
         });
 
-        const matchesForSelectedDate = allMatches
-          .filter((match) => matchesSelectedDate(getTimestamp(match), date))
+        const deriveMatchesForOrder = (order) => allMatches
+          .filter((match) => parseMatchdayValue(match) === order)
           .map(mapMatch);
 
-        let matches = matchesForSelectedDate;
+        const deriveMatchesForDate = (isoDate) => allMatches
+          .filter((match) => matchesSelectedDate(getTimestamp(match), isoDate))
+          .map(mapMatch);
 
-        if (!matches.length && availableDates.length) {
-          const selectedTs = Date.parse(`${date}T00:00:00Z`);
-          let fallbackDate = availableDates[availableDates.length - 1];
-          if (!Number.isNaN(selectedTs)) {
-            const pastOrEqual = availableDates.filter((candidate) => Date.parse(`${candidate}T00:00:00Z`) <= selectedTs);
-            if (pastOrEqual.length) {
-              fallbackDate = pastOrEqual[pastOrEqual.length - 1];
-            } else {
-              fallbackDate = availableDates[0];
+        let matches = [];
+        let activeOrder = Number.isFinite(state.activeMatchdayOrder) ? state.activeMatchdayOrder : null;
+
+        if (hasExplicitMatchday && result.matchdays.length) {
+          if (normalizedRequestedDate) {
+            const entryFromDate = result.matchdays.find((entry) => entry.dates?.includes(normalizedRequestedDate)) || null;
+            if (entryFromDate) {
+              activeOrder = entryFromDate.order;
+            }
+          }
+          if (!Number.isFinite(activeOrder)) {
+            activeOrder = result.matchdays[0].order;
+          }
+          matches = deriveMatchesForOrder(activeOrder);
+          if (!matches.length) {
+            const fallbackEntry = [...result.matchdays].reverse().find((entry) => deriveMatchesForOrder(entry.order).length > 0);
+            if (fallbackEntry) {
+              matches = deriveMatchesForOrder(fallbackEntry.order);
+              result.overrideDate = fallbackEntry.primaryDate;
+              activeOrder = fallbackEntry.order;
+              result.emptyMessage = `Keine Regionalliga-Nord-Spiele für Spieltag ${activeOrder} gefunden. Verfügbare Spieltage: ${result.matchdays.map((entry) => entry.order).join(', ')}.`;
+              result.message = `Regionalliga Nord – keine Daten für Spieltag ${state.activeMatchdayOrder ?? '?'}; zeige Spieltag ${fallbackEntry.order}.`;
+              result.messageLevel = 'warning';
+            }
+          }
+          if (Number.isFinite(activeOrder)) {
+            const activeEntry = result.matchdays.find((entry) => entry.order === activeOrder);
+            if (activeEntry) {
+              result.selectedDate = activeEntry.primaryDate ?? activeEntry.dates?.[0] ?? null;
+            }
+          }
+          result.activeOrder = Number.isFinite(activeOrder) ? activeOrder : null;
+        } else {
+          const matchesForSelectedDate = deriveMatchesForDate(normalizedRequestedDate || date);
+          matches = matchesForSelectedDate;
+
+          if (!matches.length && availableDates.length) {
+            const selectedTs = Date.parse(`${date}T00:00:00Z`);
+            let fallbackDate = availableDates[availableDates.length - 1];
+            if (!Number.isNaN(selectedTs)) {
+              const pastOrEqual = availableDates.filter((candidate) => Date.parse(`${candidate}T00:00:00Z`) <= selectedTs);
+              if (pastOrEqual.length) {
+                fallbackDate = pastOrEqual[pastOrEqual.length - 1];
+              } else {
+                fallbackDate = availableDates[0];
+              }
+            }
+
+            const fallbackMatches = deriveMatchesForDate(fallbackDate);
+
+            if (fallbackMatches.length) {
+              matches = fallbackMatches;
+              result.overrideDate = fallbackDate;
+              result.emptyMessage = `Keine Regionalliga-Nord-Spiele am ${formatDateLabel(date)} gefunden. Verfügbare Daten: ${availableDates.map(formatDateLabel).join(', ')}.`;
+              result.message = `Regionalliga Nord – keine Daten für ${formatDateLabel(date)}, zeige ${formatDateLabel(fallbackDate)}.`;
+              result.messageLevel = 'warning';
             }
           }
 
-          const fallbackMatches = allMatches
-            .filter((match) => matchesSelectedDate(getTimestamp(match), fallbackDate))
-            .map(mapMatch);
-
-          if (fallbackMatches.length) {
-            matches = fallbackMatches;
-            result.overrideDate = fallbackDate;
-            result.emptyMessage = `Keine Regionalliga-Nord-Spiele am ${formatDateLabel(date)} gefunden. Verfügbare Daten: ${availableDates.map(formatDateLabel).join(', ')}.`;
-            result.message = `Regionalliga Nord – keine Daten für ${formatDateLabel(date)}, zeige ${formatDateLabel(fallbackDate)}.`;
-            result.messageLevel = 'warning';
+          const effectiveDate = normalizeToIsoDate(result.overrideDate || normalizedRequestedDate);
+          if (effectiveDate && availableDates.includes(effectiveDate)) {
+            result.selectedDate = effectiveDate;
+            result.activeOrder = availableDates.indexOf(effectiveDate) + 1;
+          } else if (availableDates.length) {
+            result.selectedDate = availableDates[0];
+            result.activeOrder = 1;
+          } else if (effectiveDate) {
+            result.selectedDate = effectiveDate;
           }
-        }
-
-        const effectiveDate = normalizeToIsoDate(result.overrideDate || normalizedRequestedDate);
-        if (effectiveDate && availableDates.includes(effectiveDate)) {
-          result.selectedDate = effectiveDate;
-          result.activeOrder = availableDates.indexOf(effectiveDate) + 1;
-        } else if (availableDates.length) {
-          result.selectedDate = availableDates[0];
-          result.activeOrder = 1;
-        } else if (effectiveDate) {
-          result.selectedDate = effectiveDate;
         }
 
         const table = formatRegionalligaNordTable(Array.isArray(tableJson?.table) ? tableJson.table : []);
