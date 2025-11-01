@@ -1321,10 +1321,15 @@
           matches: [],
           table: [],
           emptyMessage: 'Keine Regionalliga-Nord-Begegnungen in der lokalen Datenquelle gefunden.',
-          availableDates: []
+          availableDates: [],
+          matchdays: [],
+          activeOrder: null,
+          selectedDate: null
         };
 
-        const formatDateLabel = (isoDate) => {
+  const normalizedRequestedDate = normalizeToIsoDate(date);
+
+  const formatDateLabel = (isoDate) => {
           if (!isoDate) {
             return '';
           }
@@ -1400,6 +1405,21 @@
 
         result.availableDates = availableDates;
 
+        if (availableDates.length) {
+          result.matchdays = availableDates.map((isoDate, index) => {
+            const displayDate = formatDateLabel(isoDate);
+            const baseLabel = `${index + 1}. Spieltag`;
+            return {
+              order: index + 1,
+              label: displayDate ? `${baseLabel} – ${displayDate}` : baseLabel,
+              primaryDate: isoDate,
+              dates: [isoDate]
+            };
+          });
+        } else {
+          result.matchdays = [];
+        }
+
         const mapMatch = (match) => ({
           id: match.id || `regionalliga-nord-${getTimestamp(match) || Math.random()}`,
           time: formatTime(getTimestamp(match)),
@@ -1438,6 +1458,17 @@
             result.message = `Regionalliga Nord – keine Daten für ${formatDateLabel(date)}, zeige ${formatDateLabel(fallbackDate)}.`;
             result.messageLevel = 'warning';
           }
+        }
+
+        const effectiveDate = normalizeToIsoDate(result.overrideDate || normalizedRequestedDate);
+        if (effectiveDate && availableDates.includes(effectiveDate)) {
+          result.selectedDate = effectiveDate;
+          result.activeOrder = availableDates.indexOf(effectiveDate) + 1;
+        } else if (availableDates.length) {
+          result.selectedDate = availableDates[0];
+          result.activeOrder = 1;
+        } else if (effectiveDate) {
+          result.selectedDate = effectiveDate;
         }
 
         const table = formatRegionalligaNordTable(Array.isArray(tableJson?.table) ? tableJson.table : []);
