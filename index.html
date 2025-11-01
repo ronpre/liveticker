@@ -925,7 +925,8 @@
           const detail = lastError ? ` (${lastError.message})` : '';
           if (state.league === 'regionalliga-nord') {
             if (regionalligaFallback?.loaded) {
-              applyRegionalligaNordFallback(regionalligaFallback);
+              const enrichedFallback = await enrichRegionalligaNordFallback(regionalligaFallback, leagueConfig, season);
+              applyRegionalligaNordFallback(enrichedFallback);
               return;
             }
             const message = regionalligaFallback?.emptyMessage || 'Regionalliga Nord ist in OpenLigaDB derzeit nicht hinterlegt. Bitte eigene Datenquelle anbinden.';
@@ -965,7 +966,8 @@
 
         if (state.league === 'regionalliga-nord' && matches.length === 0) {
           if (regionalligaFallback?.loaded) {
-            applyRegionalligaNordFallback(regionalligaFallback);
+            const enrichedFallback = await enrichRegionalligaNordFallback(regionalligaFallback, leagueConfig, season);
+            applyRegionalligaNordFallback(enrichedFallback);
             return;
           }
         }
@@ -1316,6 +1318,55 @@
         const statusMessage = fallback.message || 'Regionalliga Nord – verwende manuelle Datenquelle.';
         const statusLevel = fallback.messageLevel || 'warning';
         setStatus(statusMessage, statusLevel);
+      }
+
+      async function enrichRegionalligaNordFallback(fallback, leagueConfig, season) {
+        if (!fallback || !leagueConfig?.table) {
+          return fallback;
+        }
+
+        const targetMatchday = Number.isFinite(fallback.activeOrder)
+          ? fallback.activeOrder
+          : Number.isFinite(state.activeMatchdayOrder)
+            ? state.activeMatchdayOrder
+            : null;
+
+        if (!Number.isFinite(targetMatchday)) {
+          return fallback;
+        }
+
+        const tableResult = await resolveFootballTable(leagueConfig.shortcut, season, targetMatchday);
+        if (tableResult.rows.length) {
+          const parts = [];
+          if (fallback.message) {
+            parts.push(fallback.message);
+          }
+          if (tableResult.notice) {
+            parts.push(tableResult.notice);
+          }
+          return {
+            ...fallback,
+            table: tableResult.rows,
+            tableMessage: null,
+            message: parts.length ? parts.join(' · ') : fallback.message,
+            messageLevel: fallback.messageLevel ?? (tableResult.notice ? 'warning' : 'info')
+          };
+        }
+
+        if (tableResult.error) {
+          const parts = [];
+          if (fallback.message) {
+            parts.push(fallback.message);
+          }
+          parts.push('Tabelle konnte nicht geladen werden: ' + tableResult.error.message);
+          return {
+            ...fallback,
+            message: parts.join(' · '),
+            messageLevel: fallback.messageLevel ?? 'warning'
+          };
+        }
+
+        return fallback;
       }
 
       async function loadRegionalligaNordFallback(date) {
