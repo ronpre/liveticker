@@ -1085,14 +1085,14 @@
 
         const allMatchesPlanned = matches.length > 0 && matches.every((entry) => entry.status === 'Geplant');
 
-        if (leagueConfig.table && allMatchesPlanned) {
-          renderTable([], { emptyMessage: 'Tabelle wird nach Abschluss des Spieltags aktualisiert.' });
-          setStatus('Für diesen Spieltag liegen noch keine Tabellenwerte vor.', 'info');
-          return;
-        }
-
         if (leagueConfig.table) {
-          const matchday = deriveMatchday(rawData, matches) || (await fetchCurrentGroup(leagueConfig.shortcut, season));
+          let matchday = deriveMatchday(rawData, matches);
+          if (!Number.isFinite(matchday) && Number.isFinite(state.activeMatchdayOrder)) {
+            matchday = state.activeMatchdayOrder;
+          }
+          if (!Number.isFinite(matchday)) {
+            matchday = await fetchCurrentGroup(leagueConfig.shortcut, season);
+          }
           const tableResult = await resolveFootballTable(leagueConfig.shortcut, season, matchday);
           if (tableResult.rows.length) {
             renderTable(tableResult.rows);
@@ -1100,8 +1100,11 @@
               setStatus(tableResult.notice, 'warning');
             }
           } else {
-            renderTable([], { emptyMessage: 'Keine Tabellen-Daten für diesen Spieltag verfügbar.' });
-            if (tableResult.error?.status === 404) {
+            const emptyMessage = allMatchesPlanned
+              ? 'Tabelle wird nach Abschluss des Spieltags aktualisiert.'
+              : 'Keine Tabellen-Daten für diesen Spieltag verfügbar.';
+            renderTable([], { emptyMessage });
+            if (tableResult.error?.status === 404 || allMatchesPlanned) {
               setStatus('Für diesen Spieltag liegt noch keine Tabelle vor.', 'info');
             } else if (tableResult.error) {
               setStatus('Tabelle konnte nicht geladen werden: ' + tableResult.error.message, 'warning');
