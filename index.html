@@ -902,6 +902,15 @@
         const season = deriveFootballSeason(state.date);
         const shortcuts = [leagueConfig.shortcut, ...(leagueConfig.alternatives || [])].filter(Boolean);
 
+        let regionalligaFallback = null;
+        if (state.league === 'regionalliga-nord') {
+          regionalligaFallback = await loadRegionalligaNordFallback(state.date);
+          if (regionalligaFallback?.loaded) {
+            applyRegionalligaNordFallback(regionalligaFallback);
+            return;
+          }
+        }
+
         let rawData = [];
         let lastError = null;
 
@@ -919,12 +928,11 @@
         if (!Array.isArray(rawData) || rawData.length === 0) {
           const detail = lastError ? ` (${lastError.message})` : '';
           if (state.league === 'regionalliga-nord') {
-            const fallback = await loadRegionalligaNordFallback(state.date);
-            if (fallback.loaded) {
-              applyRegionalligaNordFallback(fallback);
+            if (regionalligaFallback?.loaded) {
+              applyRegionalligaNordFallback(regionalligaFallback);
               return;
             }
-            const message = fallback.emptyMessage || 'Regionalliga Nord ist in OpenLigaDB derzeit nicht hinterlegt. Bitte eigene Datenquelle anbinden.';
+            const message = regionalligaFallback?.emptyMessage || 'Regionalliga Nord ist in OpenLigaDB derzeit nicht hinterlegt. Bitte eigene Datenquelle anbinden.';
             renderMatches([], message);
             renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
             setStatus('Keine Daten für Regionalliga Nord verfügbar' + detail + '.', 'warning');
@@ -960,9 +968,8 @@
           }));
 
         if (state.league === 'regionalliga-nord' && matches.length === 0) {
-          const fallback = await loadRegionalligaNordFallback(state.date);
-          if (fallback.loaded) {
-            applyRegionalligaNordFallback(fallback);
+          if (regionalligaFallback?.loaded) {
+            applyRegionalligaNordFallback(regionalligaFallback);
             return;
           }
         }
