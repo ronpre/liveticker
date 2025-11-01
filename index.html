@@ -261,7 +261,7 @@
 <body>
   <header>
     <h1>Live Ergebnisdienst</h1>
-  <p>Aktuelle Ergebnisse für Fußball, Tennis und Badminton – gefiltert nach Datum und Wettbewerb.</p>
+  <p>Aktuelle Ergebnisse für Fußball und Tennis – gefiltert nach Datum und Wettbewerb.</p>
   </header>
 
   <main>
@@ -271,7 +271,6 @@
         <select id="sport-select">
           <option value="football">Fußball</option>
           <option value="tennis">Tennis</option>
-          <option value="badminton">Badminton</option>
         </select>
       </div>
 
@@ -394,13 +393,6 @@
         cache.set(key, { value, timestamp: Date.now() });
       }
 
-      function deleteCacheEntry(key) {
-        if (!key) {
-          return;
-        }
-        cache.delete(key);
-      }
-
       function decodeBase64Json(base64Text) {
         if (!base64Text) {
           return null;
@@ -470,17 +462,6 @@
         { tour: 'atp', requireMajor: false },
         { tour: 'wta', requireMajor: true }
       ];
-      const BADMINTON_SOURCE = {
-        label: 'O19-N2-BL – Bezirksliga Nord 2',
-        urls: [
-          { url: 'https://dbv.turnier.de/sport/league/draw?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25' },
-          { url: 'https://dbv.turnier.de/sport/drawmatches.aspx?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25' },
-          { url: 'https://r.jina.ai/https://dbv.turnier.de/sport/league/draw?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25', proxy: true },
-          { url: 'https://r.jina.ai/https://dbv.turnier.de/sport/drawmatches.aspx?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25', proxy: true }
-        ],
-        cacheKey: 'badminton:source-html',
-        ttl: 300000
-      };
 
       init();
 
@@ -657,11 +638,11 @@
         }
         const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
         const select = DOM.matchdayCurrent;
-        const isBadminton = state.sport === 'badminton';
+        const showMatchday = state.sport === 'football';
         if (DOM.matchdayControl) {
-          DOM.matchdayControl.classList.toggle('hidden', isBadminton);
+          DOM.matchdayControl.classList.toggle('hidden', !showMatchday);
         }
-        select.disabled = isBadminton;
+        select.disabled = !showMatchday;
         select.innerHTML = '';
 
         let nextValue = null;
@@ -699,8 +680,8 @@
           select.value = nextValue != null ? nextValue : select.options[0]?.value ?? '';
         } else {
           const option = document.createElement('option');
-          option.value = isBadminton ? 'all' : state.date;
-          option.textContent = isBadminton ? 'Alle Spiele' : formatDateForLocale(state.date) || state.date;
+          option.value = state.date;
+          option.textContent = formatDateForLocale(state.date) || state.date;
           option.selected = true;
           select.appendChild(option);
         }
@@ -905,10 +886,8 @@
         try {
           if (state.sport === 'football') {
             await loadFootball();
-          } else if (state.sport === 'tennis') {
-            await loadTennis();
           } else {
-            await loadBadminton();
+            await loadTennis();
           }
           const postLevel = DOM.statusBox.dataset.level;
           if (postLevel === 'info') {
@@ -1046,292 +1025,6 @@
         hideTable();
       }
 
-      async function loadBadminton() {
-        try {
-          const { html } = await fetchBadmintonHtml();
-          const { matches, standings } = parseBadmintonContent(html);
-
-          let output = matches;
-          if (!output.length) {
-            output = buildDemoMatches('Badminton', BADMINTON_SOURCE.label, state.date);
-            setStatus('Keine aktuellen Badminton-Daten gefunden – zeige Demo-Ergebnisse', 'warning');
-          }
-
-          renderMatches(output, 'Keine Badminton-Spiele verfügbar.');
-          if (standings.length) {
-            renderTable(standings);
-          } else {
-            renderTable([], { emptyMessage: 'Keine Badminton-Tabellendaten verfügbar.' });
-          }
-        } catch (error) {
-          console.error(error);
-          renderMatches(buildDemoMatches('Badminton', BADMINTON_SOURCE.label, state.date), 'Keine Badminton-Spiele verfügbar.');
-          const detail = error?.message ? ` (${error.message})` : '';
-          setStatus('Badminton-Daten konnten nicht geladen werden' + detail, 'error');
-          renderTable([], { emptyMessage: 'Keine Badminton-Tabellendaten verfügbar.' });
-        }
-      }
-
-      async function fetchBadmintonHtml() {
-        const cacheKey = BADMINTON_SOURCE.cacheKey;
-        const ttl = BADMINTON_SOURCE.ttl;
-        const bundleCached = getCacheEntry(cacheKey, ttl);
-        if (bundleCached?.html) {
-          return bundleCached;
-        }
-
-        let lastError = null;
-        for (const candidate of BADMINTON_SOURCE.urls) {
-          const candidateKey = `badminton:url:${candidate.url}`;
-          const candidateTtl = candidate.ttl ?? ttl;
-          const cachedCandidate = getCacheEntry(candidateKey, candidateTtl);
-          if (cachedCandidate?.html) {
-            setCacheEntry(cacheKey, cachedCandidate);
-            return cachedCandidate;
-          }
-
-          try {
-            const html = await fetchText(candidate.url, {
-              timeout: candidate.timeout ?? 15000,
-              headers: candidate.headers
-            });
-            if (!html) {
-              lastError = new Error('Leere Antwort von ' + candidate.url);
-              continue;
-            }
-            const hasMatchesTable = /class\s*=\s*"(?:[^"]*\s)?ruler\s+matches"/i.test(html);
-            if (hasMatchesTable) {
-              const payload = { html, source: candidate.url };
-              setCacheEntry(candidateKey, payload);
-              setCacheEntry(cacheKey, payload);
-              return payload;
-            }
-            if (/cookiewall/i.test(html)) {
-              lastError = new Error('Cookie-Wall verhindert den Zugriff (' + candidate.url + ')');
-              deleteCacheEntry(candidateKey);
-              continue;
-            }
-            if (/status\s*[:=]\s*429|Too\s+Many\s+Requests/i.test(html)) {
-              lastError = new Error('Quelle meldet Rate-Limit (' + candidate.url + ')');
-              deleteCacheEntry(candidateKey);
-              continue;
-            }
-            lastError = new Error('Keine Match-Tabelle gefunden (' + candidate.url + ')');
-            deleteCacheEntry(candidateKey);
-            continue;
-          } catch (error) {
-            lastError = error;
-          }
-        }
-
-        if (bundleCached?.html) {
-          return bundleCached;
-        }
-        throw lastError || new Error('Badminton-Quelle nicht erreichbar');
-      }
-
-      function parseBadmintonContent(html) {
-        if (!html) {
-          return { matches: [], standings: [] };
-        }
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        return {
-          matches: parseBadmintonMatches(doc),
-          standings: parseBadmintonStandings(doc)
-        };
-      }
-
-      function parseBadmintonMatches(doc) {
-        if (!doc) {
-          return [];
-        }
-        const table = doc.querySelector('table.ruler.matches, table[class*="matches"]');
-        if (!table) {
-          return [];
-        }
-        const rows = Array.from(table.querySelectorAll('tbody tr')).filter((row) => row.querySelectorAll('td').length);
-        const matches = [];
-
-        rows.forEach((row) => {
-          const cells = row.querySelectorAll('td');
-          if (!cells.length) {
-            return;
-          }
-
-          const dateCell = cells[1] || row.querySelector('td:nth-of-type(2)');
-          const { isoDate, time, timeRaw } = parseBadmintonDateTime(dateCell);
-          const homeCell = row.querySelector('td.home') || cells[5] || cells[cells.length - 4] || null;
-          const awayCell = row.querySelector('td.away') || cells[7] || cells[cells.length - 2] || null;
-          const scoreCell = row.querySelector('td.score') || cells[8] || cells[cells.length - 1] || null;
-          const locationCell = row.querySelector('td.venue, td.hall, td.location') || cells[9] || null;
-
-          const home = formatBadmintonTeamName(homeCell?.textContent);
-          const away = formatBadmintonTeamName(awayCell?.textContent);
-          if (!home && !away) {
-            return;
-          }
-
-          const matchId = extractMatchId(homeCell?.querySelector('a')?.getAttribute('href'))
-            || extractMatchId(awayCell?.querySelector('a')?.getAttribute('href'))
-            || `${isoDate ?? ''}-${home}-${away}`;
-
-          const rawScore = scoreCell ? scoreCell.textContent : '';
-          const score = normalizeBadmintonScore(rawScore);
-
-          let primaryStatus = score === '-- : --' ? 'Geplant' : 'Ergebnis';
-          if (row.querySelector('.icon_rowcheck')) {
-            primaryStatus = 'Bestätigt';
-          }
-
-          const statusParts = [];
-          const dateLabel = isoDate ? formatDateForLocale(isoDate) : '';
-          const timeLabel = time && time !== '--:--' ? time : '';
-          const dateTimeLabel = [dateLabel, timeLabel].filter(Boolean).join(' ');
-          if (dateTimeLabel) {
-            statusParts.push(dateTimeLabel);
-          }
-          if (row.querySelector('.icon_planningchanged')) {
-            statusParts.push('Verlegt');
-          }
-          if (row.querySelector('.icon_comment')) {
-            statusParts.push('Kommentar');
-          }
-          const location = locationCell ? cleanText(locationCell.textContent) : '';
-          if (location) {
-            statusParts.push(location);
-          }
-          const status = [primaryStatus, ...statusParts].join(' · ');
-
-          matches.push({
-            id: matchId,
-            time,
-            timeRaw,
-            home,
-            away,
-            score,
-            status,
-            date: isoDate
-          });
-        });
-
-        return matches;
-      }
-
-      function parseBadmintonStandings(doc) {
-        if (!doc) {
-          return [];
-        }
-        const table = doc.querySelector('table.ruler.standings, table[class*="standing"]');
-        if (!table) {
-          return [];
-        }
-        const bodyRows = Array.from(table.querySelectorAll('tbody tr')).filter((row) => row.querySelectorAll('td').length);
-        const rows = bodyRows.length ? bodyRows : Array.from(table.querySelectorAll('tr')).slice(1);
-        const standings = [];
-
-        rows.forEach((row, index) => {
-          const cells = Array.from(row.querySelectorAll('td'));
-          if (!cells.length) {
-            return;
-          }
-          const values = cells.map((cell) => cleanText(cell.textContent));
-          if (!values[1]) {
-            return;
-          }
-
-          const getValue = (primaryIndex, ...fallback) => {
-            const indices = [primaryIndex, ...fallback].filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < values.length);
-            for (const idx of indices) {
-              const candidate = values[idx];
-              if (candidate) {
-                return candidate;
-              }
-            }
-            return '';
-          };
-
-          const rankText = getValue(0);
-          const rankNumber = Number.parseInt(rankText, 10);
-
-          standings.push({
-            rank: Number.isFinite(rankNumber) ? rankNumber : rankText || index + 1,
-            team: getValue(1) || 'Team',
-            wins: getValue(3, 2) || '-',
-            draws: getValue(4) || '-',
-            losses: getValue(5) || '-',
-            goals: getValue(6, values.length - 3) || '-',
-            diff: getValue(7, values.length - 2) || '-',
-            points: getValue(values.length - 1) || '-'
-          });
-        });
-
-        return standings;
-      }
-
-      function parseBadmintonDateTime(cell) {
-        const text = cleanText(cell?.textContent ?? '');
-        const dateMatch = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
-        const timeMatch = text.match(/(\d{2}):(\d{2})/);
-        if (!dateMatch) {
-          return { isoDate: null, time: '--:--', timeRaw: '' };
-        }
-        const day = Number.parseInt(dateMatch[1], 10);
-        const month = Number.parseInt(dateMatch[2], 10) - 1;
-        const year = Number.parseInt(dateMatch[3], 10);
-        let hours = 0;
-        let minutes = 0;
-        let displayTime = '--:--';
-        if (timeMatch) {
-          hours = Number.parseInt(timeMatch[1], 10);
-          minutes = Number.parseInt(timeMatch[2], 10);
-          displayTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-        }
-        const utcDate = new Date(Date.UTC(year, month, day, hours, minutes));
-        const isoDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        return {
-          isoDate,
-          time: displayTime,
-          timeRaw: Number.isNaN(utcDate.getTime()) ? '' : utcDate.toISOString()
-        };
-      }
-
-      function normalizeBadmintonScore(rawScore) {
-        const normalized = cleanText(String(rawScore ?? '').replace(/[{}\[\]]/g, ''))
-          .replace(/[–−]/g, '-')
-          .replace(/\s+/g, '');
-        if (!normalized) {
-          return '-- : --';
-        }
-        const parts = normalized.split(/-|:/).filter(Boolean);
-        if (parts.length === 2) {
-          return `${parts[0]} : ${parts[1]}`;
-        }
-        return normalized.replace(/-/g, ' : ');
-      }
-
-      function formatBadmintonTeamName(text) {
-        const cleaned = cleanText(text);
-        return cleaned || 'Team';
-      }
-
-      function extractMatchId(href) {
-        if (!href) {
-          return null;
-        }
-        try {
-          const url = new URL(href, 'https://dbv.turnier.de/');
-          return url.searchParams.get('match') || url.searchParams.get('id') || url.href;
-        } catch (error) {
-          return href;
-        }
-      }
-
-      function cleanText(value) {
-        return String(value ?? '')
-          .replace(/\s+/g, ' ')
-          .trim();
-      }
 
       async function fetchEspnTennisScoreboard(tour, isoDate) {
         const sanitizedTour = tour || 'atp';
