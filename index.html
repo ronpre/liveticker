@@ -920,17 +920,8 @@
           const detail = lastError ? ` (${lastError.message})` : '';
           if (state.league === 'regionalliga-nord') {
             const fallback = await loadRegionalligaNordFallback(state.date);
-            if (fallback.overrideDate && fallback.overrideDate !== state.date) {
-              updateMatchdayState(fallback.overrideDate);
-            }
             if (fallback.loaded) {
-              renderMatches(fallback.matches, fallback.emptyMessage);
-              if (fallback.table?.length) {
-                renderTable(fallback.table);
-              } else {
-                renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
-              }
-              setStatus(fallback.message || 'Regionalliga Nord – verwende manuelle Datenquelle.', fallback.messageLevel || 'warning');
+              applyRegionalligaNordFallback(fallback);
               return;
             }
             const message = fallback.emptyMessage || 'Regionalliga Nord ist in OpenLigaDB derzeit nicht hinterlegt. Bitte eigene Datenquelle anbinden.';
@@ -971,19 +962,7 @@
         if (state.league === 'regionalliga-nord' && matches.length === 0) {
           const fallback = await loadRegionalligaNordFallback(state.date);
           if (fallback.loaded) {
-            state.matchdays = [];
-            state.activeMatchdayOrder = null;
-            updateMatchdayDisplay();
-            if (fallback.overrideDate && fallback.overrideDate !== state.date) {
-              updateMatchdayState(fallback.overrideDate);
-            }
-            renderMatches(fallback.matches, fallback.emptyMessage);
-            if (fallback.table?.length) {
-              renderTable(fallback.table);
-            } else {
-              renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
-            }
-            setStatus(fallback.message || 'Regionalliga Nord – verwende manuelle Datenquelle.', fallback.messageLevel || 'warning');
+            applyRegionalligaNordFallback(fallback);
             return;
           }
         }
@@ -1297,6 +1276,43 @@
           cache.set(cacheKey, { value, timestamp: Date.now() });
         }
         return value;
+      }
+
+      function applyRegionalligaNordFallback(fallback) {
+        if (!fallback) {
+          return;
+        }
+
+        state.matchdays = Array.isArray(fallback.matchdays) ? fallback.matchdays : [];
+
+        const normalizedDate = normalizeToIsoDate(fallback.selectedDate || fallback.overrideDate || state.date);
+        if (typeof fallback.activeOrder === 'number' && Number.isFinite(fallback.activeOrder)) {
+          state.activeMatchdayOrder = fallback.activeOrder;
+        } else if (normalizedDate && state.matchdays.length) {
+          const matching = state.matchdays.find((entry) => entry.primaryDate === normalizedDate || entry.dates?.includes(normalizedDate));
+          if (matching) {
+            state.activeMatchdayOrder = matching.order;
+          }
+        }
+
+        if (normalizedDate) {
+          state.date = normalizedDate;
+        }
+
+        updateMatchdayDisplay();
+
+        renderMatches(fallback.matches, fallback.emptyMessage);
+
+        if (Array.isArray(fallback.table) && fallback.table.length) {
+          renderTable(fallback.table);
+        } else {
+          const tableMessage = fallback.tableMessage || 'Keine Tabellen-Daten hinterlegt.';
+          renderTable([], { emptyMessage: tableMessage });
+        }
+
+        const statusMessage = fallback.message || 'Regionalliga Nord – verwende manuelle Datenquelle.';
+        const statusLevel = fallback.messageLevel || 'warning';
+        setStatus(statusMessage, statusLevel);
       }
 
       async function loadRegionalligaNordFallback(date) {
