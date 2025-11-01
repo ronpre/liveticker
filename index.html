@@ -444,6 +444,11 @@
         { id: 'atp', label: 'ATP Tour' },
         { id: 'grand-slam', label: 'Grand Slam' }
       ];
+      const TENNIS_TOURS = {
+        all: ['atp', 'wta'],
+        atp: ['atp'],
+        'grand-slam': ['atp', 'wta']
+      };
 
       init();
 
@@ -982,55 +987,161 @@
       async function loadTennis() {
         const date = state.date;
         const level = state.tennisCategory || 'all';
-        const cacheToken = Math.floor(Date.now() / 15000);
-        const appendCacheBust = (url) => {
-          if (!url) {
-            return url;
-          }
-          const separator = url.includes('?') ? '&' : '?';
-          return `${url}${separator}_=${cacheToken}`;
-        };
-        const endpoints = [
-          (d) => `https://cors.isomorphic-git.org/https://www.sofascore.com/api/v1/sport/tennis/scheduled-events/${d}`,
-          (d) => `https://r.jina.ai/https://www.sofascore.com/api/v1/sport/tennis/scheduled-events/${d}`,
-          (d) => `https://api.sofascore.com/api/v1/sport/tennis/scheduled-events/${d}`
-        ];
-        let data = null;
+        const tours = TENNIS_TOURS[level] || TENNIS_TOURS.all;
+        const requireMajor = level === 'grand-slam';
+
+        const aggregated = new Map();
         let lastError = null;
 
-        for (const build of endpoints) {
+        for (const tour of tours) {
           try {
-            data = await fetchJson(appendCacheBust(build(date)));
-            if (data && data.events) {
-              break;
-            }
+            const scoreboard = await fetchEspnTennisScoreboard(tour, date);
+            const matches = extractEspnTennisMatches(scoreboard, date, { requireMajor, tour });
+            matches.forEach((match) => {
+              if (!aggregated.has(match.id)) {
+                aggregated.set(match.id, match);
+              }
+            });
           } catch (error) {
             lastError = error;
           }
         }
 
-        let matches = [];
-        if (data && Array.isArray(data.events)) {
-          matches = data.events
-            .filter((event) => filterTennisEvent(event, level))
-            .map((event) => ({
-              id: event.id,
-              time: formatTime(event.startTime * 1000, true),
-              home: event.homeTeam?.name || event.shortName?.split(' - ')[0] || 'Spieler A',
-              away: event.awayTeam?.name || event.shortName?.split(' - ')[1] || 'Spieler B',
-              score: formatTennisScore(event),
-              status: event.status?.description || 'Geplant'
-            }));
-        }
+        let matches = Array.from(aggregated.values())
+          .sort((a, b) => (a.timeRaw || '').localeCompare(b.timeRaw || '') || a.home.localeCompare(b.home));
 
         if (!matches.length) {
           matches = buildDemoMatches('Tennis', level, date);
-          const detail = lastError ? ` (API: ${lastError.message})` : '';
-          setStatus('Keine öffentlichen Tennis-Daten verfügbar – zeige Demo-Ergebnisse' + detail, 'warning');
+          const detail = lastError ? ` (Quelle: ${lastError.message})` : '';
+          setStatus('Keine aktuellen Tennis-Daten gefunden – zeige Demo-Ergebnisse' + detail, 'warning');
+        } else if (lastError) {
+          setStatus('Teilweise Tennis-Daten geladen – Fallback aktiv (' + lastError.message + ')', 'warning');
         }
 
         renderMatches(matches, 'Keine Tennisbegegnungen für den gewählten Tag gefunden.');
         hideTable();
+      }
+
+      async function fetchEspnTennisScoreboard(tour, isoDate) {
+        const sanitizedTour = tour || 'atp';
+        const compactDate = (isoDate || '').replace(/-/g, '');
+        if (!compactDate || compactDate.length !== 8) {
+          throw new Error('Ungültiges Datum für Tennis-Abruf');
+        }
+        const url = `https://site.api.espn.com/apis/site/v2/sports/tennis/${sanitizedTour}/scoreboard?dates=${compactDate}`;
+        const cacheKey = `espn-tennis:${sanitizedTour}:${compactDate}`;
+        return fetchJsonWithCache(url, { cacheKey, ttl: 60000 });
+      }
+
+      function extractEspnTennisMatches(scoreboard, isoDate, { requireMajor, tour }) {
+        if (!scoreboard || !Array.isArray(scoreboard.events)) {
+          return [];
+        }
+        const targetDate = normalizeToIsoDate(isoDate);
+        const matches = [];
+        scoreboard.events.forEach((event) => {
+          if (requireMajor && !event?.major) {
+            return;
+          }
+          const groupings = Array.isArray(event?.groupings) ? event.groupings : [];
+          groupings.forEach((grouping) => {
+            const competitions = Array.isArray(grouping?.competitions) ? grouping.competitions : [];
+            competitions.forEach((competition) => {
+              const kickoffIso = normalizeToIsoDate(competition?.date || competition?.startDate);
+              if (targetDate && kickoffIso !== targetDate) {
+                return;
+              }
+              const competitors = Array.isArray(competition?.competitors) ? competition.competitors : [];
+              const home = competitors.find((entry) => entry.homeAway === 'home') || competitors[0];
+              const away = competitors.find((entry) => entry.homeAway === 'away') || competitors[1];
+              if (!home || !away) {
+                return;
+              }
+              const id = competition.id || competition.uid || `${tour || 'atp'}-${competition?.date || ''}-${competitors.length}`;
+              matches.push({
+                id,
+                timeRaw: competition?.date || competition?.startDate || '',
+                time: formatTime(competition?.date || competition?.startDate),
+                home: formatEspnTennisCompetitor(home),
+                away: formatEspnTennisCompetitor(away),
+                score: formatEspnTennisScore(home, away, competition),
+                status: mapEspnTennisStatus(competition)
+              });
+            });
+          });
+        });
+        return matches;
+      }
+
+      function formatEspnTennisCompetitor(entry) {
+        if (!entry) {
+          return 'Unbekannt';
+        }
+        if (entry.roster?.displayName) {
+          return entry.roster.displayName;
+        }
+        if (Array.isArray(entry.roster?.athletes) && entry.roster.athletes.length) {
+          return entry.roster.athletes.map((athlete) => athlete.shortName || athlete.displayName || 'Spieler').join(' / ');
+        }
+        if (entry.athlete?.displayName) {
+          return entry.athlete.displayName;
+        }
+        if (entry.team?.displayName) {
+          return entry.team.displayName;
+        }
+        return entry.displayName || entry.shortName || 'Spieler';
+      }
+
+      function formatEspnTennisScore(home, away, competition) {
+        const homeSets = Array.isArray(home?.linescores) ? home.linescores : [];
+        const awaySets = Array.isArray(away?.linescores) ? away.linescores : [];
+        const maxSets = Math.max(homeSets.length, awaySets.length);
+        const sets = [];
+        for (let index = 0; index < maxSets; index += 1) {
+          const homeValue = homeSets[index]?.value;
+          const awayValue = awaySets[index]?.value;
+          if (homeValue == null && awayValue == null) {
+            continue;
+          }
+          const formattedHome = Number.isFinite(homeValue) ? Math.trunc(homeValue) : '-';
+          const formattedAway = Number.isFinite(awayValue) ? Math.trunc(awayValue) : '-';
+          let display = `${formattedHome}:${formattedAway}`;
+          const tieHome = homeSets[index]?.tiebreak;
+          const tieAway = awaySets[index]?.tiebreak;
+          if (Number.isFinite(tieHome) || Number.isFinite(tieAway)) {
+            display += ` (${Number.isFinite(tieHome) ? tieHome : '-'}:${Number.isFinite(tieAway) ? tieAway : '-'})`;
+          }
+          sets.push(display);
+        }
+        if (sets.length) {
+          return sets.join(' · ');
+        }
+        const detail = competition?.status?.type?.detail || competition?.status?.type?.shortDetail;
+        if (detail && detail !== 'TBD') {
+          return detail;
+        }
+        return '-- : --';
+      }
+
+      function mapEspnTennisStatus(competition) {
+        const state = competition?.status?.type?.state;
+        const name = competition?.status?.type?.name;
+        if (state === 'in') {
+          return 'Live';
+        }
+        if (state === 'post') {
+          if (name === 'STATUS_RETIRED') {
+            return 'Aufgegeben';
+          }
+          if (name === 'STATUS_CANCELLED' || name === 'STATUS_WALKOVER') {
+            return 'Abgebrochen';
+          }
+          return 'Beendet';
+        }
+        if (state === 'suspended' || name === 'STATUS_DELAYED') {
+          return 'Unterbrochen';
+        }
+        return 'Geplant';
       }
 
       function renderMatches(matches, emptyMessage) {
