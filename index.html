@@ -905,10 +905,6 @@
         let regionalligaFallback = null;
         if (state.league === 'regionalliga-nord') {
           regionalligaFallback = await loadRegionalligaNordFallback(state.date);
-          if (regionalligaFallback?.loaded) {
-            applyRegionalligaNordFallback(regionalligaFallback);
-            return;
-          }
         }
 
         let rawData = [];
