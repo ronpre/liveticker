@@ -346,7 +346,8 @@
         sportSelect: document.getElementById('sport-select'),
         leagueControl: document.getElementById('league-control'),
         leagueSelect: document.getElementById('league-select'),
-        matchdayGroup: document.getElementById('matchday-group'),
+  matchdayGroup: document.getElementById('matchday-group'),
+  matchdayControl: document.getElementById('matchday-current')?.closest('.control'),
         matchdayCurrent: document.getElementById('matchday-current'),
         statusBox: document.getElementById('status-box'),
         resultsTable: document.getElementById('results-table'),
@@ -366,8 +367,8 @@
         matchdays: [],
         activeMatchdayOrder: null,
         timerId: null,
-  lastFetchStart: 0,
-  fetchInFlight: false
+        lastFetchStart: 0,
+        fetchInFlight: false
       };
 
       const cache = new Map();
@@ -630,6 +631,11 @@
         }
         const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
         const select = DOM.matchdayCurrent;
+        const isBadminton = state.sport === 'badminton';
+        if (DOM.matchdayControl) {
+          DOM.matchdayControl.classList.toggle('hidden', isBadminton);
+        }
+        select.disabled = isBadminton;
         select.innerHTML = '';
 
         let nextValue = null;
@@ -667,8 +673,8 @@
           select.value = nextValue != null ? nextValue : select.options[0]?.value ?? '';
         } else {
           const option = document.createElement('option');
-          option.value = state.date;
-          option.textContent = formatDateForLocale(state.date) || state.date;
+          option.value = isBadminton ? 'all' : state.date;
+          option.textContent = isBadminton ? 'Alle Spiele' : formatDateForLocale(state.date) || state.date;
           option.selected = true;
           select.appendChild(option);
         }
@@ -1015,28 +1021,28 @@
       }
 
       async function loadBadminton() {
-        const date = state.date;
         try {
           const { html } = await fetchBadmintonHtml();
-          const parsed = parseBadmintonMatches(html);
-          const { matches, matchedDate } = selectBadmintonMatchesByDate(parsed, date);
+          const { matches, standings } = parseBadmintonContent(html);
 
           let output = matches;
-          if (!matches.length) {
-            output = buildDemoMatches('Badminton', BADMINTON_SOURCE.label, date);
+          if (!output.length) {
+            output = buildDemoMatches('Badminton', BADMINTON_SOURCE.label, state.date);
             setStatus('Keine aktuellen Badminton-Daten gefunden – zeige Demo-Ergebnisse', 'warning');
-          } else if (matchedDate && matchedDate !== date) {
-            setStatus('Kein Spiel am gewählten Datum – zeige Ergebnisse vom ' + formatDateForLocale(matchedDate) + '.', 'warning');
           }
 
-          renderMatches(output, 'Keine Badminton-Spiele für den gewählten Tag gefunden.');
-          hideTable();
+          renderMatches(output, 'Keine Badminton-Spiele verfügbar.');
+          if (standings.length) {
+            renderTable(standings);
+          } else {
+            renderTable([], { emptyMessage: 'Keine Badminton-Tabellendaten verfügbar.' });
+          }
         } catch (error) {
           console.error(error);
-          renderMatches(buildDemoMatches('Badminton', BADMINTON_SOURCE.label, date), 'Keine Badminton-Spiele verfügbar.');
+          renderMatches(buildDemoMatches('Badminton', BADMINTON_SOURCE.label, state.date), 'Keine Badminton-Spiele verfügbar.');
           const detail = error?.message ? ` (${error.message})` : '';
           setStatus('Badminton-Daten konnten nicht geladen werden' + detail, 'error');
-          hideTable();
+          renderTable([], { emptyMessage: 'Keine Badminton-Tabellendaten verfügbar.' });
         }
       }
 
@@ -1078,17 +1084,27 @@
         throw lastError || new Error('Badminton-Quelle nicht erreichbar');
       }
 
-      function parseBadmintonMatches(html) {
+      function parseBadmintonContent(html) {
         if (!html) {
-          return [];
+          return { matches: [], standings: [] };
         }
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
-        const table = doc.querySelector('table.ruler.matches');
+        return {
+          matches: parseBadmintonMatches(doc),
+          standings: parseBadmintonStandings(doc)
+        };
+      }
+
+      function parseBadmintonMatches(doc) {
+        if (!doc) {
+          return [];
+        }
+        const table = doc.querySelector('table.ruler.matches, table[class*="matches"]');
         if (!table) {
           return [];
         }
-        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const rows = Array.from(table.querySelectorAll('tbody tr')).filter((row) => row.querySelectorAll('td').length);
         const matches = [];
 
         rows.forEach((row) => {
@@ -1096,12 +1112,13 @@
           if (!cells.length) {
             return;
           }
-          const dateCell = cells[1];
+
+          const dateCell = cells[1] || row.querySelector('td:nth-of-type(2)');
           const { isoDate, time, timeRaw } = parseBadmintonDateTime(dateCell);
-          const homeCell = cells[5];
-          const awayCell = cells[7];
-          const scoreCell = cells[8];
-          const locationCell = cells[9];
+          const homeCell = row.querySelector('td.home') || cells[5] || cells[cells.length - 4] || null;
+          const awayCell = row.querySelector('td.away') || cells[7] || cells[cells.length - 2] || null;
+          const scoreCell = row.querySelector('td.score') || cells[8] || cells[cells.length - 1] || null;
+          const locationCell = row.querySelector('td.venue, td.hall, td.location') || cells[9] || null;
 
           const home = formatBadmintonTeamName(homeCell?.textContent);
           const away = formatBadmintonTeamName(awayCell?.textContent);
@@ -1116,20 +1133,29 @@
           const rawScore = scoreCell ? scoreCell.textContent : '';
           const score = normalizeBadmintonScore(rawScore);
 
-          let status = score === '-- : --' ? 'Geplant' : 'Ergebnis';
+          let primaryStatus = score === '-- : --' ? 'Geplant' : 'Ergebnis';
           if (row.querySelector('.icon_rowcheck')) {
-            status = 'Bestätigt';
+            primaryStatus = 'Bestätigt';
+          }
+
+          const statusParts = [];
+          const dateLabel = isoDate ? formatDateForLocale(isoDate) : '';
+          const timeLabel = time && time !== '--:--' ? time : '';
+          const dateTimeLabel = [dateLabel, timeLabel].filter(Boolean).join(' ');
+          if (dateTimeLabel) {
+            statusParts.push(dateTimeLabel);
           }
           if (row.querySelector('.icon_planningchanged')) {
-            status += status === 'Geplant' ? ' · Verlegt' : ' (verlegt)';
+            statusParts.push('Verlegt');
           }
           if (row.querySelector('.icon_comment')) {
-            status += status.includes('Kommentar') ? '' : ' · Kommentar';
+            statusParts.push('Kommentar');
           }
           const location = locationCell ? cleanText(locationCell.textContent) : '';
           if (location) {
-            status += ' · ' + location;
+            statusParts.push(location);
           }
+          const status = [primaryStatus, ...statusParts].join(' · ');
 
           matches.push({
             id: matchId,
@@ -1144,6 +1170,57 @@
         });
 
         return matches;
+      }
+
+      function parseBadmintonStandings(doc) {
+        if (!doc) {
+          return [];
+        }
+        const table = doc.querySelector('table.ruler.standings, table[class*="standing"]');
+        if (!table) {
+          return [];
+        }
+        const bodyRows = Array.from(table.querySelectorAll('tbody tr')).filter((row) => row.querySelectorAll('td').length);
+        const rows = bodyRows.length ? bodyRows : Array.from(table.querySelectorAll('tr')).slice(1);
+        const standings = [];
+
+        rows.forEach((row, index) => {
+          const cells = Array.from(row.querySelectorAll('td'));
+          if (!cells.length) {
+            return;
+          }
+          const values = cells.map((cell) => cleanText(cell.textContent));
+          if (!values[1]) {
+            return;
+          }
+
+          const getValue = (primaryIndex, ...fallback) => {
+            const indices = [primaryIndex, ...fallback].filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < values.length);
+            for (const idx of indices) {
+              const candidate = values[idx];
+              if (candidate) {
+                return candidate;
+              }
+            }
+            return '';
+          };
+
+          const rankText = getValue(0);
+          const rankNumber = Number.parseInt(rankText, 10);
+
+          standings.push({
+            rank: Number.isFinite(rankNumber) ? rankNumber : rankText || index + 1,
+            team: getValue(1) || 'Team',
+            wins: getValue(3, 2) || '-',
+            draws: getValue(4) || '-',
+            losses: getValue(5) || '-',
+            goals: getValue(6, values.length - 3) || '-',
+            diff: getValue(7, values.length - 2) || '-',
+            points: getValue(values.length - 1) || '-'
+          });
+        });
+
+        return standings;
       }
 
       function parseBadmintonDateTime(cell) {
@@ -1208,55 +1285,6 @@
         return String(value ?? '')
           .replace(/\s+/g, ' ')
           .trim();
-      }
-
-      function selectBadmintonMatchesByDate(matches, targetDate) {
-        if (!Array.isArray(matches) || !matches.length) {
-          return { matches: [], matchedDate: targetDate };
-        }
-        const grouped = matches.reduce((map, match) => {
-          const key = match.date || (match.timeRaw ? match.timeRaw.slice(0, 10) : null);
-          if (!key) {
-            return map;
-          }
-          if (!map.has(key)) {
-            map.set(key, []);
-          }
-          map.get(key).push(match);
-          return map;
-        }, new Map());
-
-        if (!grouped.size) {
-          return { matches: [], matchedDate: targetDate };
-        }
-
-        const normalizedTarget = normalizeToIsoDate(targetDate);
-        if (normalizedTarget && grouped.has(normalizedTarget)) {
-          return { matches: grouped.get(normalizedTarget), matchedDate: normalizedTarget };
-        }
-
-        if (!normalizedTarget) {
-          const [firstDate, firstMatches] = grouped.entries().next().value;
-          return { matches: firstMatches, matchedDate: firstDate };
-        }
-
-        const targetTime = Date.parse(`${normalizedTarget}T00:00:00Z`);
-        let fallbackDate = null;
-        let smallestDelta = Number.POSITIVE_INFINITY;
-        grouped.forEach((value, dateKey) => {
-          const time = Date.parse(`${dateKey}T00:00:00Z`);
-          const delta = Math.abs(time - targetTime);
-          if (delta < smallestDelta) {
-            smallestDelta = delta;
-            fallbackDate = dateKey;
-          }
-        });
-
-        if (fallbackDate != null) {
-          return { matches: grouped.get(fallbackDate), matchedDate: fallbackDate };
-        }
-
-        return { matches: [], matchedDate: normalizedTarget };
       }
 
       async function fetchEspnTennisScoreboard(tour, isoDate) {
@@ -1414,7 +1442,19 @@
         DOM.noResults.classList.add('hidden');
 
         matches
-          .sort((a, b) => (a.time || '').localeCompare(b.time || '') || a.home.localeCompare(b.home))
+          .sort((a, b) => {
+            const first = a.timeRaw || '';
+            const second = b.timeRaw || '';
+            const rawCompare = first.localeCompare(second);
+            if (rawCompare !== 0) {
+              return rawCompare;
+            }
+            const timeCompare = (a.time || '').localeCompare(b.time || '');
+            if (timeCompare !== 0) {
+              return timeCompare;
+            }
+            return a.home.localeCompare(b.home);
+          })
           .forEach((match) => {
             const row = document.createElement('tr');
             row.innerHTML = `
