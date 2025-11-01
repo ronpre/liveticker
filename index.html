@@ -588,16 +588,18 @@
 
       function onMatchdaySelect(event) {
         const select = event.target;
-        if (!select || !select.value) {
+        if (!select || select.selectedIndex < 0) {
           return;
         }
-        const rawOrder = select.options[select.selectedIndex]?.dataset.matchdayOrder;
-        const parsedOrder = rawOrder ? Number.parseInt(rawOrder, 10) : null;
+    const selectedOption = select.options[select.selectedIndex];
+    const rawOrder = selectedOption?.dataset.matchdayOrder;
+    const parsedOrder = rawOrder != null ? Number.parseInt(rawOrder, 10) : null;
         const matchdayOrder = Number.isNaN(parsedOrder) ? null : parsedOrder;
-        if (select.value === state.date && (matchdayOrder == null || matchdayOrder === state.activeMatchdayOrder)) {
+        const primaryDate = selectedOption?.dataset.primaryDate || selectedOption?.dataset.dates?.split(',')[0] || null;
+        if (primaryDate === state.date && (matchdayOrder == null || matchdayOrder === state.activeMatchdayOrder)) {
           return;
         }
-        updateMatchdayState(select.value, matchdayOrder == null ? undefined : matchdayOrder);
+        updateMatchdayState(primaryDate ?? state.date, matchdayOrder == null ? undefined : matchdayOrder);
         requestRefresh(true);
       }
 
@@ -627,21 +629,31 @@
       }
 
       function updateMatchdayState(newDate, matchdayOrderOverride) {
-        const normalized = normalizeToIsoDate(newDate);
+        let normalized = normalizeToIsoDate(newDate);
+        let nextOrder = matchdayOrderOverride;
+        const matchdays = state.matchdays || [];
+        if (!normalized && typeof nextOrder === 'number') {
+          const entry = matchdays.find((item) => item.order === nextOrder);
+          if (entry?.primaryDate) {
+            normalized = normalizeToIsoDate(entry.primaryDate);
+          }
+        }
         if (!normalized) {
           return;
         }
-        let nextOrder = matchdayOrderOverride;
-        const index = resolveMatchdayIndexByDate(normalized, state.matchdays || []);
+        const index = resolveMatchdayIndexByDate(normalized, matchdays);
         if ((nextOrder == null || Number.isNaN(nextOrder)) && index !== -1) {
-          nextOrder = state.matchdays[index]?.order;
+          nextOrder = matchdays[index]?.order;
+        }
+        if (typeof nextOrder !== 'number' || Number.isNaN(nextOrder)) {
+          nextOrder = null;
         }
         const orderChanged = typeof nextOrder === 'number' && nextOrder !== state.activeMatchdayOrder;
         if (normalized === state.date && !orderChanged) {
           return;
         }
         state.date = normalized;
-        if (typeof nextOrder === 'number' && !Number.isNaN(nextOrder)) {
+        if (typeof nextOrder === 'number') {
           state.activeMatchdayOrder = nextOrder;
         }
         updateMatchdayDisplay();
@@ -655,18 +667,24 @@
         const select = DOM.matchdayCurrent;
         select.innerHTML = '';
 
+        let nextValue = null;
+
         if (matchdays.length) {
           const activeOrder = determineActiveMatchdayOrder(matchdays);
           matchdays.forEach((entry) => {
             const option = document.createElement('option');
-            option.value = entry.primaryDate;
+            option.value = String(entry.order);
             option.textContent = entry.label;
             option.dataset.matchdayOrder = entry.order;
+            if (entry.primaryDate) {
+              option.dataset.primaryDate = entry.primaryDate;
+            }
             if (entry.dates?.length) {
               option.dataset.dates = entry.dates.join(',');
             }
             if (entry.order === activeOrder) {
               option.selected = true;
+              nextValue = option.value;
             }
             select.appendChild(option);
           });
@@ -677,6 +695,10 @@
             if (fallbackOrder != null && !Number.isNaN(fallbackOrder)) {
               state.activeMatchdayOrder = fallbackOrder;
             }
+            nextValue = select.options[0].value;
+          }
+          if (nextValue != null) {
+            select.value = nextValue;
           }
         } else {
           const option = document.createElement('option');
