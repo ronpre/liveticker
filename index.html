@@ -632,53 +632,58 @@
 
       function updateMatchdayState(newDate, matchdayOrderOverride) {
         const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+        const normalizedInputDate = normalizeToIsoDate(newDate);
+
+        if (!matchdays.length) {
+          const normalizedFallback = normalizedInputDate || state.date;
+          if (!normalizedFallback || normalizedFallback === state.date) {
+            return false;
+          }
+          state.date = normalizedFallback;
+          updateMatchdayDisplay();
+          return true;
+        }
+
         let targetOrder = Number.isFinite(matchdayOrderOverride)
           ? matchdayOrderOverride
           : Number.parseInt(matchdayOrderOverride, 10);
         if (!Number.isFinite(targetOrder)) {
           targetOrder = null;
         }
-        let targetDate = normalizeToIsoDate(newDate);
 
-        if (targetOrder != null) {
-          const entryByOrder = matchdays.find((entry) => entry.order === targetOrder);
-          if (entryByOrder?.primaryDate) {
-            targetDate = entryByOrder.primaryDate;
+        let targetEntry = targetOrder != null
+          ? matchdays.find((entry) => entry.order === targetOrder)
+          : null;
+
+        if (!targetEntry && normalizedInputDate) {
+          targetEntry = matchdays.find((entry) => entry.primaryDate === normalizedInputDate || entry.dates?.includes(normalizedInputDate)) || null;
+          if (targetEntry) {
+            targetOrder = targetEntry.order;
           }
         }
 
-        if (!targetDate && matchdays.length) {
-          const entry = targetOrder != null
-            ? matchdays.find((item) => item.order === targetOrder)
-            : null;
-          if (entry?.primaryDate) {
-            targetDate = entry.primaryDate;
-          }
+        let nextDate = targetEntry?.primaryDate || normalizedInputDate || state.date;
+        if (!nextDate && targetEntry?.dates?.length) {
+          nextDate = targetEntry.dates[0];
         }
 
-        if (targetOrder == null && targetDate && matchdays.length) {
-          const indexByDate = resolveMatchdayIndexByDate(targetDate, matchdays);
-          if (indexByDate !== -1) {
-            targetOrder = matchdays[indexByDate].order;
-          }
-        }
-
-        if (targetOrder == null && matchdays.length) {
+        if (targetOrder == null && targetEntry == null) {
           const currentIndex = getCurrentMatchdayIndex();
           const fallbackEntry = currentIndex != null ? matchdays[currentIndex] : matchdays[0];
           if (fallbackEntry) {
+            targetEntry = fallbackEntry;
             targetOrder = fallbackEntry.order;
-            if (!targetDate && fallbackEntry.primaryDate) {
-              targetDate = fallbackEntry.primaryDate;
+            if (!nextDate) {
+              nextDate = fallbackEntry.primaryDate || fallbackEntry.dates?.[0] || state.date;
             }
           }
         }
 
-        if (!targetDate) {
-          targetDate = state.date;
+        const normalizedDate = normalizeToIsoDate(nextDate) || state.date;
+        if (normalizedDate == null) {
+          return false;
         }
 
-        const normalizedDate = normalizeToIsoDate(targetDate) || state.date;
         const orderChanged = typeof targetOrder === 'number' && targetOrder !== state.activeMatchdayOrder;
         const dateChanged = normalizedDate !== state.date;
 
@@ -686,13 +691,9 @@
           return false;
         }
 
-        if (normalizedDate) {
-          state.date = normalizedDate;
-        }
+        state.date = normalizedDate;
         if (typeof targetOrder === 'number') {
           state.activeMatchdayOrder = targetOrder;
-        } else if (!matchdays.length) {
-          state.activeMatchdayOrder = null;
         }
         updateMatchdayDisplay();
         return true;
