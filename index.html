@@ -1099,6 +1099,13 @@
               lastError = new Error('Leere Antwort von ' + candidate.url);
               continue;
             }
+            const hasMatchesTable = /class\s*=\s*"(?:[^"]*\s)?ruler\s+matches"/i.test(html);
+            if (hasMatchesTable) {
+              const payload = { html, source: candidate.url };
+              setCacheEntry(candidateKey, payload);
+              setCacheEntry(cacheKey, payload);
+              return payload;
+            }
             if (/cookiewall/i.test(html)) {
               lastError = new Error('Cookie-Wall verhindert den Zugriff (' + candidate.url + ')');
               deleteCacheEntry(candidateKey);
@@ -1109,15 +1116,9 @@
               deleteCacheEntry(candidateKey);
               continue;
             }
-            if (!/class\s*=\s*"ruler\s+matches"/i.test(html)) {
-              lastError = new Error('Keine Match-Tabelle gefunden (' + candidate.url + ')');
-              deleteCacheEntry(candidateKey);
-              continue;
-            }
-            const payload = { html, source: candidate.url };
-            setCacheEntry(candidateKey, payload);
-            setCacheEntry(cacheKey, payload);
-            return payload;
+            lastError = new Error('Keine Match-Tabelle gefunden (' + candidate.url + ')');
+            deleteCacheEntry(candidateKey);
+            continue;
           } catch (error) {
             lastError = error;
           }
