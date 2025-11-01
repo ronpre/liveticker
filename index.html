@@ -1325,6 +1325,10 @@
           return fallback;
         }
 
+        if (Array.isArray(fallback.table) && fallback.table.length) {
+          return fallback;
+        }
+
         const targetMatchday = Number.isFinite(fallback.activeOrder)
           ? fallback.activeOrder
           : Number.isFinite(state.activeMatchdayOrder)
