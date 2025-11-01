@@ -579,10 +579,12 @@
           targetMatchday = resolveMatchdayOrderByDate(targetDate);
         }
 
-        if (!targetDate || targetDate === state.date) {
+        const orderChanged = Number.isFinite(targetMatchday) && targetMatchday !== state.activeMatchdayOrder;
+        const dateChanged = typeof targetDate === 'string' ? targetDate !== state.date : true;
+        if (!orderChanged && (!targetDate || !dateChanged)) {
           return;
         }
-        updateMatchdayState(targetDate, targetMatchday);
+        updateMatchdayState(targetDate || state.date, targetMatchday);
         requestRefresh(true);
       }
 
