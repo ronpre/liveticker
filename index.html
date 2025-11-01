@@ -261,7 +261,7 @@
 <body>
   <header>
     <h1>Live Ergebnisdienst</h1>
-  <p>Aktuelle Ergebnisse für Fußball und Tennis – gefiltert nach Datum und Wettbewerb.</p>
+  <p>Aktuelle Ergebnisse für Fußball, Tennis und Badminton – gefiltert nach Datum und Wettbewerb.</p>
   </header>
 
   <main>
@@ -271,6 +271,7 @@
         <select id="sport-select">
           <option value="football">Fußball</option>
           <option value="tennis">Tennis</option>
+          <option value="badminton">Badminton</option>
         </select>
       </div>
 
@@ -365,9 +366,8 @@
         matchdays: [],
         activeMatchdayOrder: null,
         timerId: null,
-        lastFetchStart: 0,
-        fetchInFlight: false,
-        lastError: null
+  lastFetchStart: 0,
+  fetchInFlight: false
       };
 
       const cache = new Map();
@@ -443,6 +443,17 @@
         { tour: 'atp', requireMajor: false },
         { tour: 'wta', requireMajor: true }
       ];
+      const BADMINTON_SOURCE = {
+        label: 'O19-N2-BL – Bezirksliga Nord 2',
+        urls: [
+          { url: 'https://dbv.turnier.de/sport/league/draw?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25' },
+          { url: 'https://dbv.turnier.de/sport/drawmatches.aspx?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25' },
+          { url: 'https://r.jina.ai/https://dbv.turnier.de/sport/league/draw?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25', proxy: true },
+          { url: 'https://r.jina.ai/https://dbv.turnier.de/sport/drawmatches.aspx?id=925D6245-1FA1-496D-9810-1439487E5801&draw=25', proxy: true }
+        ],
+        cacheKey: 'badminton:source-html',
+        ttl: 300000
+      };
 
       init();
 
@@ -862,8 +873,10 @@
         try {
           if (state.sport === 'football') {
             await loadFootball();
-          } else {
+          } else if (state.sport === 'tennis') {
             await loadTennis();
+          } else {
+            await loadBadminton();
           }
           const postLevel = DOM.statusBox.dataset.level;
           if (postLevel === 'info') {
@@ -1001,6 +1014,251 @@
         hideTable();
       }
 
+      async function loadBadminton() {
+        const date = state.date;
+        try {
+          const { html } = await fetchBadmintonHtml();
+          const parsed = parseBadmintonMatches(html);
+          const { matches, matchedDate } = selectBadmintonMatchesByDate(parsed, date);
+
+          let output = matches;
+          if (!matches.length) {
+            output = buildDemoMatches('Badminton', BADMINTON_SOURCE.label, date);
+            setStatus('Keine aktuellen Badminton-Daten gefunden – zeige Demo-Ergebnisse', 'warning');
+          } else if (matchedDate && matchedDate !== date) {
+            setStatus('Kein Spiel am gewählten Datum – zeige Ergebnisse vom ' + formatDateForLocale(matchedDate) + '.', 'warning');
+          }
+
+          renderMatches(output, 'Keine Badminton-Spiele für den gewählten Tag gefunden.');
+          hideTable();
+        } catch (error) {
+          console.error(error);
+          renderMatches(buildDemoMatches('Badminton', BADMINTON_SOURCE.label, date), 'Keine Badminton-Spiele verfügbar.');
+          const detail = error?.message ? ` (${error.message})` : '';
+          setStatus('Badminton-Daten konnten nicht geladen werden' + detail, 'error');
+          hideTable();
+        }
+      }
+
+      async function fetchBadmintonHtml() {
+        const cacheKey = BADMINTON_SOURCE.cacheKey;
+        const cached = cache.get(cacheKey);
+        const now = Date.now();
+        if (cached && now - cached.timestamp < BADMINTON_SOURCE.ttl && cached.value?.html) {
+          return cached.value;
+        }
+
+        let lastError = null;
+        for (const candidate of BADMINTON_SOURCE.urls) {
+          try {
+            const html = await fetchText(candidate.url, { timeout: 15000 });
+            if (!html) {
+              lastError = new Error('Leere Antwort von ' + candidate.url);
+              continue;
+            }
+            if (/cookiewall/i.test(html)) {
+              lastError = new Error('Cookie-Wall verhindert den Zugriff (' + candidate.url + ')');
+              continue;
+            }
+            if (!/class\s*=\s*"ruler\s+matches"/i.test(html)) {
+              lastError = new Error('Keine Match-Tabelle gefunden (' + candidate.url + ')');
+              continue;
+            }
+            const payload = { html, source: candidate.url };
+            cache.set(cacheKey, { value: payload, timestamp: now });
+            return payload;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (cached && cached.value?.html) {
+          return cached.value;
+        }
+        throw lastError || new Error('Badminton-Quelle nicht erreichbar');
+      }
+
+      function parseBadmintonMatches(html) {
+        if (!html) {
+          return [];
+        }
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const table = doc.querySelector('table.ruler.matches');
+        if (!table) {
+          return [];
+        }
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const matches = [];
+
+        rows.forEach((row) => {
+          const cells = row.querySelectorAll('td');
+          if (!cells.length) {
+            return;
+          }
+          const dateCell = cells[1];
+          const { isoDate, time, timeRaw } = parseBadmintonDateTime(dateCell);
+          const homeCell = cells[5];
+          const awayCell = cells[7];
+          const scoreCell = cells[8];
+          const locationCell = cells[9];
+
+          const home = formatBadmintonTeamName(homeCell?.textContent);
+          const away = formatBadmintonTeamName(awayCell?.textContent);
+          if (!home && !away) {
+            return;
+          }
+
+          const matchId = extractMatchId(homeCell?.querySelector('a')?.getAttribute('href'))
+            || extractMatchId(awayCell?.querySelector('a')?.getAttribute('href'))
+            || `${isoDate ?? ''}-${home}-${away}`;
+
+          const rawScore = scoreCell ? scoreCell.textContent : '';
+          const score = normalizeBadmintonScore(rawScore);
+
+          let status = score === '-- : --' ? 'Geplant' : 'Ergebnis';
+          if (row.querySelector('.icon_rowcheck')) {
+            status = 'Bestätigt';
+          }
+          if (row.querySelector('.icon_planningchanged')) {
+            status += status === 'Geplant' ? ' · Verlegt' : ' (verlegt)';
+          }
+          if (row.querySelector('.icon_comment')) {
+            status += status.includes('Kommentar') ? '' : ' · Kommentar';
+          }
+          const location = locationCell ? cleanText(locationCell.textContent) : '';
+          if (location) {
+            status += ' · ' + location;
+          }
+
+          matches.push({
+            id: matchId,
+            time,
+            timeRaw,
+            home,
+            away,
+            score,
+            status,
+            date: isoDate
+          });
+        });
+
+        return matches;
+      }
+
+      function parseBadmintonDateTime(cell) {
+        const text = cleanText(cell?.textContent ?? '');
+        const dateMatch = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+        const timeMatch = text.match(/(\d{2}):(\d{2})/);
+        if (!dateMatch) {
+          return { isoDate: null, time: '--:--', timeRaw: '' };
+        }
+        const day = Number.parseInt(dateMatch[1], 10);
+        const month = Number.parseInt(dateMatch[2], 10) - 1;
+        const year = Number.parseInt(dateMatch[3], 10);
+        let hours = 0;
+        let minutes = 0;
+        let displayTime = '--:--';
+        if (timeMatch) {
+          hours = Number.parseInt(timeMatch[1], 10);
+          minutes = Number.parseInt(timeMatch[2], 10);
+          displayTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        }
+        const utcDate = new Date(Date.UTC(year, month, day, hours, minutes));
+        const isoDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return {
+          isoDate,
+          time: displayTime,
+          timeRaw: Number.isNaN(utcDate.getTime()) ? '' : utcDate.toISOString()
+        };
+      }
+
+      function normalizeBadmintonScore(rawScore) {
+        const normalized = cleanText(String(rawScore ?? '').replace(/[{}\[\]]/g, ''))
+          .replace(/[–−]/g, '-')
+          .replace(/\s+/g, '');
+        if (!normalized) {
+          return '-- : --';
+        }
+        const parts = normalized.split(/-|:/).filter(Boolean);
+        if (parts.length === 2) {
+          return `${parts[0]} : ${parts[1]}`;
+        }
+        return normalized.replace(/-/g, ' : ');
+      }
+
+      function formatBadmintonTeamName(text) {
+        const cleaned = cleanText(text);
+        return cleaned || 'Team';
+      }
+
+      function extractMatchId(href) {
+        if (!href) {
+          return null;
+        }
+        try {
+          const url = new URL(href, 'https://dbv.turnier.de/');
+          return url.searchParams.get('match') || url.searchParams.get('id') || url.href;
+        } catch (error) {
+          return href;
+        }
+      }
+
+      function cleanText(value) {
+        return String(value ?? '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      function selectBadmintonMatchesByDate(matches, targetDate) {
+        if (!Array.isArray(matches) || !matches.length) {
+          return { matches: [], matchedDate: targetDate };
+        }
+        const grouped = matches.reduce((map, match) => {
+          const key = match.date || (match.timeRaw ? match.timeRaw.slice(0, 10) : null);
+          if (!key) {
+            return map;
+          }
+          if (!map.has(key)) {
+            map.set(key, []);
+          }
+          map.get(key).push(match);
+          return map;
+        }, new Map());
+
+        if (!grouped.size) {
+          return { matches: [], matchedDate: targetDate };
+        }
+
+        const normalizedTarget = normalizeToIsoDate(targetDate);
+        if (normalizedTarget && grouped.has(normalizedTarget)) {
+          return { matches: grouped.get(normalizedTarget), matchedDate: normalizedTarget };
+        }
+
+        if (!normalizedTarget) {
+          const [firstDate, firstMatches] = grouped.entries().next().value;
+          return { matches: firstMatches, matchedDate: firstDate };
+        }
+
+        const targetTime = Date.parse(`${normalizedTarget}T00:00:00Z`);
+        let fallbackDate = null;
+        let smallestDelta = Number.POSITIVE_INFINITY;
+        grouped.forEach((value, dateKey) => {
+          const time = Date.parse(`${dateKey}T00:00:00Z`);
+          const delta = Math.abs(time - targetTime);
+          if (delta < smallestDelta) {
+            smallestDelta = delta;
+            fallbackDate = dateKey;
+          }
+        });
+
+        if (fallbackDate != null) {
+          return { matches: grouped.get(fallbackDate), matchedDate: fallbackDate };
+        }
+
+        return { matches: [], matchedDate: normalizedTarget };
+      }
+
       async function fetchEspnTennisScoreboard(tour, isoDate) {
         const sanitizedTour = tour || 'atp';
         const compactDate = (isoDate || '').replace(/-/g, '');
@@ -1121,6 +1379,29 @@
           return 'Unterbrochen';
         }
         return 'Geplant';
+      }
+
+      function buildDemoMatches(sportLabel, competitionLabel, isoDate) {
+        const baseDate = normalizeToIsoDate(isoDate) || new Date().toISOString().slice(0, 10);
+        const label = competitionLabel ? `${sportLabel} · ${competitionLabel}` : sportLabel;
+        const createEntry = (offsetHours, home, away, score) => {
+          const date = new Date(`${baseDate}T00:00:00Z`);
+          date.setUTCHours(date.getUTCHours() + offsetHours);
+          return {
+            id: `${sportLabel.toLowerCase()}-demo-${offsetHours}-${home.replace(/\s+/g, '-')}`,
+            time: date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
+            timeRaw: date.toISOString(),
+            home,
+            away,
+            score,
+            status: 'Simulation'
+          };
+        };
+        return [
+          createEntry(12, `${label} Team A`, `${label} Team B`, '2 : 1'),
+          createEntry(14, `${label} Team C`, `${label} Team D`, '1 : 1'),
+          createEntry(16, `${label} Team E`, `${label} Team F`, '3 : 2')
+        ];
       }
 
       function renderMatches(matches, emptyMessage) {
