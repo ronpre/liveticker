@@ -591,15 +591,21 @@
         if (!select || select.selectedIndex < 0) {
           return;
         }
-    const selectedOption = select.options[select.selectedIndex];
-    const rawOrder = selectedOption?.dataset.matchdayOrder;
-    const parsedOrder = rawOrder != null ? Number.parseInt(rawOrder, 10) : null;
-        const matchdayOrder = Number.isNaN(parsedOrder) ? null : parsedOrder;
-        const primaryDate = selectedOption?.dataset.primaryDate || selectedOption?.dataset.dates?.split(',')[0] || null;
-        if (primaryDate === state.date && (matchdayOrder == null || matchdayOrder === state.activeMatchdayOrder)) {
+        const rawValue = select.value;
+        const matchdayOrder = Number.parseInt(rawValue, 10);
+        const metadata = Array.isArray(state.matchdays)
+          ? state.matchdays.find((entry) => entry.order === matchdayOrder)
+          : null;
+        const selectedOption = select.options[select.selectedIndex];
+        const optionDates = selectedOption?.dataset?.dates?.split(',') || [];
+        const primaryDate = metadata?.primaryDate || selectedOption?.dataset?.primaryDate || optionDates[0] || null;
+        const normalizedDate = primaryDate ?? state.date;
+        const orderChanged = Number.isFinite(matchdayOrder) && matchdayOrder !== state.activeMatchdayOrder;
+        const dateChanged = normalizedDate !== state.date;
+        if (!orderChanged && !dateChanged) {
           return;
         }
-        updateMatchdayState(primaryDate ?? state.date, matchdayOrder == null ? undefined : matchdayOrder);
+        updateMatchdayState(normalizedDate, Number.isFinite(matchdayOrder) ? matchdayOrder : undefined);
         requestRefresh(true);
       }
 
