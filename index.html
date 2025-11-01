@@ -404,8 +404,16 @@
       ];
 
       const REGIONALLIGA_NORD_FEED = {
-        matchesUrl: './data/regionalliga-nord-matches.json',
-        tableUrl: './data/regionalliga-nord-table.json',
+        matchesUrl: [
+          './data/regionalliga-nord-matches.json',
+          './public/data/regionalliga-nord-matches.json',
+          './regionalliga-nord-matches.json'
+        ],
+        tableUrl: [
+          './data/regionalliga-nord-table.json',
+          './public/data/regionalliga-nord-table.json',
+          './regionalliga-nord-table.json'
+        ],
         cacheBust: '20251116'
       };
 
@@ -1388,9 +1396,9 @@
           selectedDate: null
         };
 
-  const normalizedRequestedDate = normalizeToIsoDate(date);
+        const normalizedRequestedDate = normalizeToIsoDate(date);
 
-  const formatDateLabel = (isoDate) => {
+        const formatDateLabel = (isoDate) => {
           if (!isoDate) {
             return '';
           }
@@ -1407,6 +1415,8 @@
         let tableError = null;
         let usedInlineMatches = false;
         let usedInlineTable = false;
+        let matchesSourceUrl = null;
+        let tableSourceUrl = null;
 
         const withCacheBust = (url) => {
           if (!url) {
@@ -1423,27 +1433,59 @@
           return hash ? `${rebuilt}#${hash}` : rebuilt;
         };
 
-        if (REGIONALLIGA_NORD_FEED.matchesUrl) {
-          try {
-            const matchesUrl = withCacheBust(REGIONALLIGA_NORD_FEED.matchesUrl);
-            const cacheKey = REGIONALLIGA_NORD_FEED.cacheBust
-              ? `rln-matches:${REGIONALLIGA_NORD_FEED.cacheBust}`
-              : 'rln-matches';
-            matchesJson = await fetchJsonWithCache(matchesUrl, { cacheKey, ttl: 30000 });
-          } catch (error) {
-            matchesError = error;
+        const toCandidateArray = (value) => {
+          if (!value) {
+            return [];
+          }
+          if (Array.isArray(value)) {
+            return value.filter(Boolean);
+          }
+          return [value];
+        };
+
+        const matchUrlCandidates = toCandidateArray(REGIONALLIGA_NORD_FEED.matchesUrl);
+        if (matchUrlCandidates.length) {
+          const failures = [];
+          for (let index = 0; index < matchUrlCandidates.length; index += 1) {
+            const baseUrl = matchUrlCandidates[index];
+            try {
+              const matchesUrl = withCacheBust(baseUrl);
+              const cacheKey = REGIONALLIGA_NORD_FEED.cacheBust
+                ? `rln-matches:${REGIONALLIGA_NORD_FEED.cacheBust}:${index}`
+                : `rln-matches${index ? `:${index}` : ''}`;
+              matchesJson = await fetchJsonWithCache(matchesUrl, { cacheKey, ttl: 30000 });
+              matchesSourceUrl = baseUrl;
+              matchesError = null;
+              break;
+            } catch (error) {
+              failures.push(error);
+            }
+          }
+          if (!matchesJson && failures.length) {
+            matchesError = failures[failures.length - 1];
           }
         }
 
-        if (REGIONALLIGA_NORD_FEED.tableUrl) {
-          try {
-            const tableUrl = withCacheBust(REGIONALLIGA_NORD_FEED.tableUrl);
-            const cacheKey = REGIONALLIGA_NORD_FEED.cacheBust
-              ? `rln-table:${REGIONALLIGA_NORD_FEED.cacheBust}`
-              : 'rln-table';
-            tableJson = await fetchJsonWithCache(tableUrl, { cacheKey, ttl: 30000 });
-          } catch (error) {
-            tableError = error;
+        const tableUrlCandidates = toCandidateArray(REGIONALLIGA_NORD_FEED.tableUrl);
+        if (tableUrlCandidates.length) {
+          const failures = [];
+          for (let index = 0; index < tableUrlCandidates.length; index += 1) {
+            const baseUrl = tableUrlCandidates[index];
+            try {
+              const tableUrl = withCacheBust(baseUrl);
+              const cacheKey = REGIONALLIGA_NORD_FEED.cacheBust
+                ? `rln-table:${REGIONALLIGA_NORD_FEED.cacheBust}:${index}`
+                : `rln-table${index ? `:${index}` : ''}`;
+              tableJson = await fetchJsonWithCache(tableUrl, { cacheKey, ttl: 30000 });
+              tableSourceUrl = baseUrl;
+              tableError = null;
+              break;
+            } catch (error) {
+              failures.push(error);
+            }
+          }
+          if (!tableJson && failures.length) {
+            tableError = failures[failures.length - 1];
           }
         }
 
@@ -1457,6 +1499,7 @@
             source: matchesJson?.source || inlineData.source
           };
           usedInlineMatches = true;
+          matchesSourceUrl = matchesSourceUrl || 'inline';
         }
 
         if ((!tableJson || !Array.isArray(tableJson.table) || !tableJson.table.length) && inlineData?.table?.length) {
@@ -1467,6 +1510,7 @@
             source: tableJson?.source || inlineData.source
           };
           usedInlineTable = true;
+          tableSourceUrl = tableSourceUrl || 'inline';
         }
 
         const parseMatchdayValue = (match) => {
@@ -1652,8 +1696,14 @@
         if (matchesJson?.source) {
           infoChunks.push(matchesJson.source);
         }
+        if (typeof matchesSourceUrl === 'string' && matchesSourceUrl !== 'inline') {
+          infoChunks.push(`Spiele-Datei ${matchesSourceUrl}`);
+        }
         if (tableJson?.source && tableJson.source !== matchesJson?.source) {
           infoChunks.push(tableJson.source);
+        }
+        if (typeof tableSourceUrl === 'string' && tableSourceUrl !== 'inline' && tableSourceUrl !== matchesSourceUrl) {
+          infoChunks.push(`Tabelle-Datei ${tableSourceUrl}`);
         }
         if (availableDates.length) {
           infoChunks.push(`Verfügbare Spieltage: ${availableDates.map(formatDateLabel).join(', ')}`);
@@ -1667,6 +1717,21 @@
           } else {
             result.message = 'Regionalliga Nord – lokale Datenquelle aktiv' + (infoChunks.length ? ` (${infoChunks.join(' · ')})` : '');
             result.messageLevel = 'warning';
+          }
+          if ((matchesError && usedInlineMatches) || (tableError && usedInlineTable)) {
+            const failureNotes = [];
+            if (matchesError && usedInlineMatches) {
+              failureNotes.push('Spiele-Datei nicht erreichbar' + (matchesError.message ? ` (${matchesError.message})` : ''));
+            }
+            if (tableError && usedInlineTable) {
+              failureNotes.push('Tabellen-Datei nicht erreichbar' + (tableError.message ? ` (${tableError.message})` : ''));
+            }
+            if (failureNotes.length) {
+              const failureDetail = failureNotes.join(' · ');
+              result.message = result.message.includes(failureDetail)
+                ? result.message
+                : `${result.message} · ${failureDetail}`;
+            }
           }
           if (usedInlineMatches || usedInlineTable) {
             const inlineHint = 'Inline-Daten eingebettet – bitte regelmäßig im Quelltext oder unter /data aktualisieren.';
