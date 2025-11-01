@@ -495,10 +495,10 @@
         DOM.sportSelect.addEventListener('change', onSportChange);
         DOM.leagueSelect.addEventListener('change', onLeagueChange);
         if (DOM.matchdayPrev) {
-          DOM.matchdayPrev.addEventListener('click', () => shiftMatchday(-1));
+          DOM.matchdayPrev.addEventListener('click', (event) => shiftMatchday(-1, event.currentTarget));
         }
         if (DOM.matchdayNext) {
-          DOM.matchdayNext.addEventListener('click', () => shiftMatchday(1));
+          DOM.matchdayNext.addEventListener('click', (event) => shiftMatchday(1, event.currentTarget));
         }
         if (DOM.matchdayCurrent) {
           DOM.matchdayCurrent.addEventListener('change', onMatchdaySelect);
@@ -551,15 +551,37 @@
         requestRefresh(true);
       }
 
-      function shiftMatchday(offsetDays) {
+      function shiftMatchday(offsetDays, sourceControl) {
         if (!Number.isFinite(offsetDays)) {
           return;
         }
-        const targetDate = deriveTargetMatchdayDate(offsetDays);
+        let targetDate = null;
+        let targetMatchday = null;
+
+        if (sourceControl) {
+          const rawDate = sourceControl.dataset?.targetDate;
+          if (rawDate) {
+            targetDate = rawDate;
+          }
+          const rawOrder = sourceControl.dataset?.matchdayOrder;
+          if (rawOrder != null) {
+            const parsed = Number.parseInt(rawOrder, 10);
+            if (!Number.isNaN(parsed)) {
+              targetMatchday = parsed;
+            }
+          }
+        }
+
+        if (!targetDate) {
+          targetDate = deriveTargetMatchdayDate(offsetDays);
+        }
+        if (targetMatchday == null) {
+          targetMatchday = resolveMatchdayOrderByDate(targetDate);
+        }
+
         if (!targetDate || targetDate === state.date) {
           return;
         }
-        const targetMatchday = resolveMatchdayOrderByDate(targetDate);
         updateMatchdayState(targetDate, targetMatchday);
         requestRefresh(true);
       }
