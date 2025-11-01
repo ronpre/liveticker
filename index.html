@@ -373,8 +373,52 @@
 
       const cache = new Map();
 
-    updateMatchdayDisplay();
+      function decodeBase64Json(base64Text) {
+        if (!base64Text) {
+          return null;
+        }
+        try {
+          const normalized = base64Text.replace(/\s+/g, '');
+          const binary = atob(normalized);
+          const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+          const decoded = new TextDecoder('utf-8').decode(bytes);
+          return JSON.parse(decoded);
+        } catch (error) {
+          console.warn('Regionalliga Base64-Dekodierung fehlgeschlagen', error);
+          return null;
+        }
+      }
 
+      async function fetchText(url, { timeout = FETCH_TIMEOUT_MS, headers } = {}) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+        try {
+          const response = await fetch(url, { signal: controller.signal, headers });
+          if (!response.ok) {
+            const error = new Error(`${response.status} ${response.statusText}`.trim());
+            error.status = response.status;
+            error.url = url;
+            throw error;
+          }
+          return await response.text();
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      async function fetchTextWithCache(url, { cacheKey, ttl = 60000, headers } = {}) {
+        if (cacheKey && cache.has(cacheKey)) {
+          const entry = cache.get(cacheKey);
+          if (Date.now() - entry.timestamp < ttl) {
+            return entry.value;
+          }
+        }
+        const value = await fetchText(url, { headers });
+        if (cacheKey) {
+          cache.set(cacheKey, { value, timestamp: Date.now() });
+        }
+        return value;
+      }
       const FOOTBALL_LEAGUES = [
         {
           id: 'bl1',
@@ -406,52 +450,228 @@
       const REGIONALLIGA_NORD_FEED = {
         matchesUrl: [
           './data/regionalliga-nord-matches.json',
+          './data/regionalliga-nord-matches.base64.txt',
           './public/data/regionalliga-nord-matches.json',
-          './regionalliga-nord-matches.json'
+          './public/data/regionalliga-nord-matches.base64.txt',
+          './regionalliga-nord-matches.json',
+          './regionalliga-nord-matches.base64.txt'
         ],
         tableUrl: [
           './data/regionalliga-nord-table.json',
           './public/data/regionalliga-nord-table.json',
           './regionalliga-nord-table.json'
         ],
-        cacheBust: '20251116'
+        cacheBust: '20251117-base64'
       };
 
-      const REGIONALLIGA_NORD_INLINE = {
-        lastUpdated: '2025-11-16T09:05:00+01:00',
-        source: 'Regionalliga Nord – Inline-Fallback (Spieltag 11, 18 Teams)',
-        matches: [
-          { id: 'RLN-2025-MD11-01', matchday: 11, kickoff: '2025-10-11T14:00:00+02:00', home: 'Weiche Flensburg 08', away: 'FC St. Pauli II', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-02', matchday: 11, kickoff: '2025-10-11T15:00:00+02:00', home: 'Holstein Kiel II', away: 'Eimsbütteler TV', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-03', matchday: 11, kickoff: '2025-10-11T16:00:00+02:00', home: 'Bremer SV', away: 'Phönix Lübeck', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-04', matchday: 11, kickoff: '2025-10-11T17:00:00+02:00', home: 'BW Lohne', away: 'VfB Lübeck', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-05', matchday: 11, kickoff: '2025-10-11T18:00:00+02:00', home: 'Hannover 96 II', away: 'SSV Jeddeloh', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-06', matchday: 11, kickoff: '2025-10-11T19:00:00+02:00', home: 'SV Meppen', away: 'Hamburger SV II', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-07', matchday: 11, kickoff: '2025-10-11T20:00:00+02:00', home: 'Altona 93', away: 'Eintracht Norderstedt', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-08', matchday: 11, kickoff: '2025-10-11T21:00:00+02:00', home: 'VfB Oldenburg', away: 'Werder Bremen II', score: '-:-', status: 'Geplant' },
-          { id: 'RLN-2025-MD11-09', matchday: 11, kickoff: '2025-10-11T22:00:00+02:00', home: 'Teutonia Ottensen', away: 'SV Drochtersen/Assel', score: '-:-', status: 'Geplant' }
-        ],
-        table: [
-          { rank: 1, team: 'Weiche Flensburg 08', played: 12, wins: 9, draws: 2, losses: 1, goalsFor: 30, goalsAgainst: 12, points: 29 },
-          { rank: 2, team: 'SV Meppen', played: 12, wins: 8, draws: 3, losses: 1, goalsFor: 27, goalsAgainst: 14, points: 27 },
-          { rank: 3, team: 'VfB Lübeck', played: 12, wins: 7, draws: 4, losses: 1, goalsFor: 24, goalsAgainst: 13, points: 25 },
-          { rank: 4, team: 'Werder Bremen II', played: 12, wins: 6, draws: 4, losses: 2, goalsFor: 23, goalsAgainst: 15, points: 22 },
-          { rank: 5, team: 'SV Drochtersen/Assel', played: 12, wins: 6, draws: 3, losses: 3, goalsFor: 19, goalsAgainst: 14, points: 21 },
-          { rank: 6, team: 'Hannover 96 II', played: 12, wins: 6, draws: 2, losses: 4, goalsFor: 22, goalsAgainst: 19, points: 20 },
-          { rank: 7, team: 'Holstein Kiel II', played: 12, wins: 5, draws: 4, losses: 3, goalsFor: 21, goalsAgainst: 18, points: 19 },
-          { rank: 8, team: 'VfB Oldenburg', played: 12, wins: 5, draws: 3, losses: 4, goalsFor: 18, goalsAgainst: 17, points: 18 },
-          { rank: 9, team: 'FC St. Pauli II', played: 12, wins: 4, draws: 4, losses: 4, goalsFor: 17, goalsAgainst: 18, points: 16 },
-          { rank: 10, team: 'Eintracht Norderstedt', played: 12, wins: 4, draws: 3, losses: 5, goalsFor: 16, goalsAgainst: 19, points: 15 },
-          { rank: 11, team: 'Hamburger SV II', played: 12, wins: 4, draws: 2, losses: 6, goalsFor: 18, goalsAgainst: 21, points: 14 },
-          { rank: 12, team: 'Phönix Lübeck', played: 12, wins: 3, draws: 4, losses: 5, goalsFor: 14, goalsAgainst: 19, points: 13 },
-          { rank: 13, team: 'Altona 93', played: 12, wins: 3, draws: 3, losses: 6, goalsFor: 15, goalsAgainst: 22, points: 12 },
-          { rank: 14, team: 'SSV Jeddeloh', played: 12, wins: 2, draws: 5, losses: 5, goalsFor: 13, goalsAgainst: 18, points: 11 },
-          { rank: 15, team: 'BW Lohne', played: 12, wins: 2, draws: 4, losses: 6, goalsFor: 11, goalsAgainst: 20, points: 10 },
-          { rank: 16, team: 'Bremer SV', played: 12, wins: 2, draws: 3, losses: 7, goalsFor: 12, goalsAgainst: 24, points: 9 },
-          { rank: 17, team: 'Teutonia Ottensen', played: 12, wins: 2, draws: 2, losses: 8, goalsFor: 10, goalsAgainst: 25, points: 8 },
-          { rank: 18, team: 'Eimsbütteler TV', played: 12, wins: 1, draws: 3, losses: 8, goalsFor: 9, goalsAgainst: 26, points: 6 }
-        ]
-      };
+      /* Legacy inline fallback kept for reference
+    const REGIONALLIGA_NORD_INLINE = (() => {
+        const base64Matches = `
+ewogICJsYXN0VXBkYXRlZCI6ICIyMDI1LTExLTE2VDA5OjAwOjAwKzAxOjAwIiwKICAic291cmNlIjogIlJlZ2lvbmFsbGlnYSBOb3JkIOKAkyBzeW50aGV0aXNjaGVyIERvcHBlbHJ1bmRlbi1TcGllbHBsYW4gKDE4IFRlYW1zLCAzNCBTcGllbHRhZ2UpIiwKICAibWF0Y2hlcyI6IFsKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDEtMDEiLAogICAgICAibWF0Y2hkYXkiOiAxLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTAyVDE0OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiV2VpY2hlIEZsZW5zYnVyZyAwOCIsCiAgICAgICJhd2F5IjogIldlcmRlciBCcmVtZW4gSUkiLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDEtMDIiLAogICAgICAibWF0Y2hkYXkiOiAxLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTAyVDE1OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiRWludHJhY2h0IE5vcmRlcnN0ZWR0IiwKICAgICAgImF3YXkiOiAiU1YgRHJvY2h0ZXJzZW4vQXNzZWwiLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDEtMDMiLAogICAgICAibWF0Y2hkYXkiOiAxLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTAyVDE2OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiSGFtYnVyZ2VyIFNWIElJIiwKICAgICAgImF3YXkiOiAiVGV1dG9uaWEgT3R0ZW5zZW4iLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDEtMDQiLAogICAgICAibWF0Y2hkYXkiOiAxLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTAyVDE3OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiU1NWIEplZGRlbG9oIiwKICAgICAgImF3YXkiOiAiVmZCIE9sZGVuYnVyZyIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMS0wNSIsCiAgICAgICJtYXRjaGRheSI6IDEsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMDJUMTg6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJWZkIgTMO8YmVjayIsCiAgICAgICJhd2F5IjogIkFsdG9uYSA5MyIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMS0wNiIsCiAgICAgICJtYXRjaGRheSI6IDEsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMDJUMTk6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJQaMO2bml4IEzDvGJlY2siLAogICAgICAiYXdheSI6ICJTViBNZXBwZW4iLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDEtMDciLAogICAgICAibWF0Y2hkYXkiOiAxLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTAyVDIwOjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiRWltc2LDvHR0ZWxlciBUViIsCiAgICAgICJhd2F5IjogIkhhbm5vdmVyIDk2IElJIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAxLTA4IiwKICAgICAgIm1hdGNoZGF5IjogMSwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0wMlQyMTowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkZDIFN0LiBQYXVsaSBJSSIsCiAgICAgICJhd2F5IjogIkJXIExvaG5lIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAxLTA5IiwKICAgICAgIm1hdGNoZGF5IjogMSwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0wMlQyMjowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkhvbHN0ZWluIEtpZWwgSUkiLAogICAgICAiYXdheSI6ICJCcmVtZXIgU1YiLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDItMDEiLAogICAgICAibWF0Y2hkYXkiOiAyLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTA5VDE0OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiU1YgRHJvY2h0ZXJzZW4vQXNzZWwiLAogICAgICAiYXdheSI6ICJXZWljaGUgRmxlbnNidXJnIDA4IiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAyLTAyIiwKICAgICAgIm1hdGNoZGF5IjogMiwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0wOVQxNTowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIlRldXRvbmlhIE90dGVuc2VuIiwKICAgICAgImF3YXkiOiAiV2VyZGVyIEJyZW1lbiBJSSIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMi0wMyIsCiAgICAgICJtYXRjaGRheSI6IDIsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMDlUMTY6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJWZkIgT2xkZW5idXJnIiwKICAgICAgImF3YXkiOiAiRWludHJhY2h0IE5vcmRlcnN0ZWR0IiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAyLTA0IiwKICAgICAgIm1hdGNoZGF5IjogMiwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0wOVQxNzowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkFsdG9uYSA5MyIsCiAgICAgICJhd2F5IjogIkhhbWJ1cmdlciBTViBJSSIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMi0wNSIsCiAgICAgICJtYXRjaGRheSI6IDIsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMDlUMTg6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJTViBNZXBwZW4iLAogICAgICAiYXdheSI6ICJTU1YgSmVkZGVsb2giLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDItMDYiLAogICAgICAibWF0Y2hkYXkiOiAyLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTA5VDE5OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiSGFubm92ZXIgOTYgSUkiLAogICAgICAiYXdheSI6ICJWZkIgTMO8YmVjayIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMi0wNyIsCiAgICAgICJtYXRjaGRheSI6IDIsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMDlUMjA6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJCVyBMb2huZSIsCiAgICAgICJhd2F5IjogIlBow7ZuaXggTMO8YmVjayIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMi0wOCIsCiAgICAgICJtYXRjaGRheSI6IDIsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMDlUMjE6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJCcmVtZXIgU1YiLAogICAgICAiYXdheSI6ICJFaW1zYsO8dHRlbGVyIFRWIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAyLTA5IiwKICAgICAgIm1hdGNoZGF5IjogMiwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0wOVQyMjowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkhvbHN0ZWluIEtpZWwgSUkiLAogICAgICAiYXdheSI6ICJGQyBTdC4gUGF1bGkgSUkiLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDMtMDEiLAogICAgICAibWF0Y2hkYXkiOiAzLAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTE2VDE0OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiV2VpY2hlIEZsZW5zYnVyZyAwOCIsCiAgICAgICJhd2F5IjogIlRldXRvbmlhIE90dGVuc2VuIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAzLTAyIiwKICAgICAgIm1hdGNoZGF5IjogMywKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0xNlQxNTowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIlNWIERyb2NodGVyc2VuL0Fzc2VsIiwKICAgICAgImF3YXkiOiAiVmZCIE9sZGVuYnVyZyIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMy0wMyIsCiAgICAgICJtYXRjaGRheSI6IDMsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMTZUMTY6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJXZXJkZXIgQnJlbWVuIElJIiwKICAgICAgImF3YXkiOiAiQWx0b25hIDkzIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAzLTA0IiwKICAgICAgIm1hdGNoZGF5IjogMywKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0xNlQxNzowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkVpbnRyYWNodCBOb3JkZXJzdGVkdCIsCiAgICAgICJhd2F5IjogIlNWIE1lcHBlbiIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMy0wNSIsCiAgICAgICJtYXRjaGRheSI6IDMsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMTZUMTg6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJIYW1idXJnZXIgU1YgSUkiLAogICAgICAiYXdheSI6ICJIYW5ub3ZlciA5NiBJSSIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMy0wNiIsCiAgICAgICJtYXRjaGRheSI6IDMsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMTZUMTk6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJTU1YgSmVkZGVsb2giLAogICAgICAiYXdheSI6ICJCVyBMb2huZSIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMy0wNyIsCiAgICAgICJtYXRjaGRheSI6IDMsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMTZUMjA6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJWZkIgTMO8YmVjayIsCiAgICAgICJhd2F5IjogIkJyZW1lciBTViIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwMy0wOCIsCiAgICAgICJtYXRjaGRheSI6IDMsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMTZUMjE6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJQaMO2bml4IEzDvGJlY2siLAogICAgICAiYXdheSI6ICJIb2xzdGVpbiBLaWVsIElJIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDAzLTA5IiwKICAgICAgIm1hdGNoZGF5IjogMywKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0xNlQyMjowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkVpbXNiw7x0dGVsZXIgVFYiLAogICAgICAiYXdheSI6ICJGQyBTdC4gUGF1bGkgSUkiLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDQtMDEiLAogICAgICAibWF0Y2hkYXkiOiA0LAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTIzVDE0OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiVmZCIE9sZGVuYnVyZyIsCiAgICAgICJhd2F5IjogIldlaWNoZSBGbGVuc2J1cmcgMDgiLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDQtMDIiLAogICAgICAibWF0Y2hkYXkiOiA0LAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTIzVDE1OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiQWx0b25hIDkzIiwKICAgICAgImF3YXkiOiAiVGV1dG9uaWEgT3R0ZW5zZW4iLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDQtMDMiLAogICAgICAibWF0Y2hkYXkiOiA0LAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTIzVDE2OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiU1YgTWVwcGVuIiwKICAgICAgImF3YXkiOiAiU1YgRHJvY2h0ZXJzZW4vQXNzZWwiLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDQtMDQiLAogICAgICAibWF0Y2hkYXkiOiA0LAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTIzVDE3OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiSGFubm92ZXIgOTYgSUkiLAogICAgICAiYXdheSI6ICJXZXJkZXIgQnJlbWVuIElJIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDA0LTA1IiwKICAgICAgIm1hdGNoZGF5IjogNCwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0yM1QxODowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkJXIExvaG5lIiwKICAgICAgImF3YXkiOiAiRWludHJhY2h0IE5vcmRlcnN0ZWR0IiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDA0LTA2IiwKICAgICAgIm1hdGNoZGF5IjogNCwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0yM1QxOTowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkJyZW1lciBTViIsCiAgICAgICJhd2F5IjogIkhhbWJ1cmdlciBTViBJSSIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwNC0wNyIsCiAgICAgICJtYXRjaGRheSI6IDQsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMjNUMjA6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJIb2xzdGVpbiBLaWVsIElJIiwKICAgICAgImF3YXkiOiAiU1NWIEplZGRlbG9oIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDA0LTA4IiwKICAgICAgIm1hdGNoZGF5IjogNCwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0yM1QyMTowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkZDIFN0LiBQYXVsaSBJSSIsCiAgICAgICJhd2F5IjogIlZmQiBMw7xiZWNrIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFudCIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJSTE4tMjAyNS1NRDA0LTA5IiwKICAgICAgIm1hdGNoZGF5IjogNCwKICAgICAgImtpY2tvZmYiOiAiMjAyNS0wOC0yM1QyMjowMDowMCswMjowMCIsCiAgICAgICJob21lIjogIkVpbXNiw7x0dGVsZXIgVFYiLAogICAgICAiYXdheSI6ICJQaMO2bml4IEzDvGJlY2siLAogICAgICAic2NvcmUiOiAiLTotIiwKICAgICAgInN0YXR1cyI6ICJHZXBsYW50IgogICAgfSwKICAgIHsKICAgICAgImlkIjogIlJMTi0yMDI1LU1EMDUtMDEiLAogICAgICAibWF0Y2hkYXkiOiA1LAogICAgICAia2lja29mZiI6ICIyMDI1LTA4LTMwVDE0OjAwOjAwKzAyOjAwIiwKICAgICAgImhvbWUiOiAiV2VpY2hlIEZsZW5zYnVyZyAwOCIsCiAgICAgICJhd2F5IjogIkFsdG9uYSA5MyIsCiAgICAgICJzY29yZSI6ICItOi0iLAogICAgICAic3RhdHVzIjogIkdlcGxhbnQiCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUkxOLTIwMjUtTUQwNS0wMiIsCiAgICAgICJtYXRjaGRheSI6IDUsCiAgICAgICJraWNrb2ZmIjogIjIwMjUtMDgtMzBUMTU6MDA6MDArMDI6MDAiLAogICAgICAiaG9tZSI6ICJWZkIgT2xkZW5idXJnIiwKICAgICAgImF3YXkiOiAiU1YgTWVwcGVuIiwKICAgICAgInNjb3JlIjogIi06LSIsCiAgICAgICJzdGF0dXMiOiAiR2VwbGFu
+
+      */
+      const REGIONALLIGA_NORD_INLINE = (() => {
+        const fallback = {
+          lastUpdated: '2025-11-16T09:00:00+01:00',
+          source: 'Regionalliga Nord – Inline-Fallback (Kurzfassung)',
+          matches: [
+            {
+              id: 'RLN-2025-MD01-01',
+              matchday: 1,
+              kickoff: '2025-08-02T14:00:00+02:00',
+              home: 'Weiche Flensburg 08',
+              away: 'Werder Bremen II',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-02',
+              matchday: 1,
+              kickoff: '2025-08-02T15:00:00+02:00',
+              home: 'Eintracht Norderstedt',
+              away: 'SV Drochtersen/Assel',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-03',
+              matchday: 1,
+              kickoff: '2025-08-02T16:00:00+02:00',
+              home: 'Hamburger SV II',
+              away: 'Teutonia Ottensen',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-04',
+              matchday: 1,
+              kickoff: '2025-08-02T17:00:00+02:00',
+              home: 'SSV Jeddeloh',
+              away: 'VfB Oldenburg',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-05',
+              matchday: 1,
+              kickoff: '2025-08-02T18:00:00+02:00',
+              home: 'VfB Lübeck',
+              away: 'Altona 93',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-06',
+              matchday: 1,
+              kickoff: '2025-08-02T19:00:00+02:00',
+              home: 'Phönix Lübeck',
+              away: 'SV Meppen',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-07',
+              matchday: 1,
+              kickoff: '2025-08-02T20:00:00+02:00',
+              home: 'Eimsbütteler TV',
+              away: 'Hannover 96 II',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-08',
+              matchday: 1,
+              kickoff: '2025-08-02T21:00:00+02:00',
+              home: 'FC St. Pauli II',
+              away: 'BW Lohne',
+              score: '-:-',
+              status: 'Geplant'
+            },
+            {
+              id: 'RLN-2025-MD01-09',
+              matchday: 1,
+              kickoff: '2025-08-02T22:00:00+02:00',
+              home: 'Holstein Kiel II',
+              away: 'Bremer SV',
+              score: '-:-',
+              status: 'Geplant'
+            }
+          ],
+          table: [
+            {
+              rank: 1,
+              team: 'Weiche Flensburg 08',
+              played: 12,
+              wins: 9,
+              draws: 2,
+              losses: 1,
+              goalsFor: 30,
+              goalsAgainst: 12,
+              points: 29
+            },
+            {
+              rank: 2,
+              team: 'SV Meppen',
+              played: 12,
+              wins: 8,
+              draws: 3,
+              losses: 1,
+              goalsFor: 27,
+              goalsAgainst: 14,
+              points: 27
+            },
+            {
+              rank: 3,
+              team: 'VfB Lübeck',
+              played: 12,
+              wins: 7,
+              draws: 4,
+              losses: 1,
+              goalsFor: 24,
+              goalsAgainst: 13,
+              points: 25
+            },
+            {
+              rank: 4,
+              team: 'Werder Bremen II',
+              played: 12,
+              wins: 6,
+              draws: 4,
+              losses: 2,
+              goalsFor: 23,
+              goalsAgainst: 15,
+              points: 22
+            },
+            {
+              rank: 5,
+              team: 'SV Drochtersen/Assel',
+              played: 12,
+              wins: 6,
+              draws: 3,
+              losses: 3,
+              goalsFor: 19,
+              goalsAgainst: 14,
+              points: 21
+            },
+            {
+              rank: 6,
+              team: 'Hannover 96 II',
+              played: 12,
+              wins: 6,
+              draws: 2,
+              losses: 4,
+              goalsFor: 22,
+              goalsAgainst: 19,
+              points: 20
+            },
+            {
+              rank: 7,
+              team: 'Holstein Kiel II',
+              played: 12,
+              wins: 5,
+              draws: 4,
+              losses: 3,
+              goalsFor: 21,
+              goalsAgainst: 18,
+              points: 19
+            },
+            {
+              rank: 8,
+              team: 'VfB Oldenburg',
+              played: 12,
+              wins: 5,
+              draws: 3,
+              losses: 4,
+              goalsFor: 18,
+              goalsAgainst: 17,
+              points: 18
+            },
+            {
+              rank: 9,
+              team: 'FC St. Pauli II',
+              played: 12,
+              wins: 4,
+              draws: 4,
+              losses: 4,
+              goalsFor: 17,
+              goalsAgainst: 18,
+              points: 16
+            },
+            {
+              rank: 10,
+              team: 'Eintracht Norderstedt',
+              played: 12,
+              wins: 4,
+              draws: 3,
+              losses: 5,
+              goalsFor: 16,
+              goalsAgainst: 19,
+              points: 15
+            }
+          ]
+        };
+        return fallback;
+      })();
 
       const TENNIS_LEVELS = [
         { id: 'all', label: 'ATP & Grand Slam' },
@@ -1260,23 +1480,22 @@
       }
 
       async function fetchJson(url, { timeout = FETCH_TIMEOUT_MS } = {}) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeout);
+        const text = await fetchText(url, { timeout, headers: { Accept: 'application/json,text/plain' } });
+        if (!text) {
+          return null;
+        }
+        const trimmed = text.trim();
         try {
-          const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
-          if (!response.ok) {
-            const error = new Error(`${response.status} ${response.statusText}`.trim());
-            error.status = response.status;
-            error.url = url;
-            throw error;
+          return JSON.parse(trimmed);
+        } catch (error) {
+          const looksLikeBase64 = url?.endsWith('.base64.txt') || /^[A-Za-z0-9+/=\s]+$/.test(trimmed);
+          if (looksLikeBase64) {
+            const decoded = decodeBase64Json(trimmed);
+            if (decoded != null) {
+              return decoded;
+            }
           }
-          const text = await response.text();
-          if (!text) {
-            return null;
-          }
-          return JSON.parse(text);
-        } finally {
-          clearTimeout(timer);
+          throw error;
         }
       }
 
