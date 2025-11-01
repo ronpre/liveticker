@@ -361,7 +361,6 @@
       const state = {
         sport: 'football',
         league: null,
-        tennisCategory: 'all',
         date: defaultDate,
         matchdays: [],
         activeMatchdayOrder: null,
@@ -439,16 +438,11 @@
           table: true
         }
       ];
-      const TENNIS_LEVELS = [
-        { id: 'all', label: 'ATP & Grand Slam' },
-        { id: 'atp', label: 'ATP Tour' },
-        { id: 'grand-slam', label: 'Grand Slam' }
+      const TENNIS_SCOPE_LABEL = 'ATP Tour & Grand Slam';
+      const TENNIS_SOURCES = [
+        { tour: 'atp', requireMajor: false },
+        { tour: 'wta', requireMajor: true }
       ];
-      const TENNIS_TOURS = {
-        all: ['atp', 'wta'],
-        atp: ['atp'],
-        'grand-slam': ['atp', 'wta']
-      };
 
       init();
 
@@ -489,8 +483,6 @@
         }
         if (state.sport === 'football') {
           state.league = state.league || FOOTBALL_LEAGUES[0].id;
-        } else if (state.sport === 'tennis') {
-          state.league = state.tennisCategory || TENNIS_LEVELS[0].id;
         } else {
           state.league = null;
         }
@@ -501,8 +493,8 @@
       function onLeagueChange(event) {
         if (state.sport === 'football') {
           state.league = event.target.value;
-        } else if (state.sport === 'tennis') {
-          state.tennisCategory = event.target.value;
+        } else {
+          return;
         }
         requestRefresh(true);
       }
@@ -843,6 +835,7 @@
 
         if (state.sport === 'football') {
           DOM.leagueControl.classList.remove('hidden');
+          DOM.leagueSelect.disabled = false;
           FOOTBALL_LEAGUES.forEach((league) => {
             const option = document.createElement('option');
             option.value = league.id;
@@ -855,20 +848,9 @@
           if (!state.league) {
             state.league = FOOTBALL_LEAGUES[0].id;
           }
-        } else if (state.sport === 'tennis') {
-          DOM.leagueControl.classList.remove('hidden');
-          TENNIS_LEVELS.forEach((entry) => {
-            const option = document.createElement('option');
-            option.value = entry.id;
-            option.textContent = entry.label;
-            if (entry.id === state.tennisCategory) {
-              option.selected = true;
-            }
-            DOM.leagueSelect.appendChild(option);
-          });
-          state.tennisCategory = state.tennisCategory || TENNIS_LEVELS[0].id;
         } else {
           DOM.leagueControl.classList.add('hidden');
+          DOM.leagueSelect.disabled = true;
         }
       }
 
@@ -986,20 +968,17 @@
 
       async function loadTennis() {
         const date = state.date;
-        const level = state.tennisCategory || 'all';
-        const tours = TENNIS_TOURS[level] || TENNIS_TOURS.all;
-        const requireMajor = level === 'grand-slam';
-
         const aggregated = new Map();
         let lastError = null;
 
-        for (const tour of tours) {
+        for (const source of TENNIS_SOURCES) {
           try {
-            const scoreboard = await fetchEspnTennisScoreboard(tour, date);
-            const matches = extractEspnTennisMatches(scoreboard, date, { requireMajor, tour });
+            const scoreboard = await fetchEspnTennisScoreboard(source.tour, date);
+            const matches = extractEspnTennisMatches(scoreboard, date, { requireMajor: source.requireMajor, tour: source.tour });
             matches.forEach((match) => {
-              if (!aggregated.has(match.id)) {
-                aggregated.set(match.id, match);
+              const key = `${source.tour}:${match.id}`;
+              if (!aggregated.has(key)) {
+                aggregated.set(key, match);
               }
             });
           } catch (error) {
@@ -1011,7 +990,7 @@
           .sort((a, b) => (a.timeRaw || '').localeCompare(b.timeRaw || '') || a.home.localeCompare(b.home));
 
         if (!matches.length) {
-          matches = buildDemoMatches('Tennis', level, date);
+          matches = buildDemoMatches('Tennis', TENNIS_SCOPE_LABEL, date);
           const detail = lastError ? ` (Quelle: ${lastError.message})` : '';
           setStatus('Keine aktuellen Tennis-Daten gefunden – zeige Demo-Ergebnisse' + detail, 'warning');
         } else if (lastError) {
