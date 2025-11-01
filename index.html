@@ -726,6 +726,25 @@
         return closestIndex;
       }
 
+      function getCurrentMatchdayIndex() {
+        const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+        if (!matchdays.length) {
+          return null;
+        }
+        if (state.activeMatchdayOrder != null) {
+          const indexByOrder = matchdays.findIndex((entry) => entry.order === state.activeMatchdayOrder);
+          if (indexByOrder !== -1) {
+            return indexByOrder;
+          }
+        }
+        const indexByDate = resolveMatchdayIndexByDate(state.date, matchdays);
+        if (indexByDate !== -1) {
+          return indexByDate;
+        }
+        const closestIndex = findClosestMatchdayIndex(state.date, matchdays);
+        return closestIndex !== -1 ? closestIndex : null;
+      }
+
       function ensureActiveMatchday(matchdays) {
         if (!Array.isArray(matchdays) || !matchdays.length) {
           state.activeMatchdayOrder = null;
@@ -754,7 +773,8 @@
         const grouped = new Map();
         matches.forEach((match) => {
           const group = match?.group || match?.Group;
-          const order = group?.groupOrderID ?? group?.GroupOrderID;
+          const rawOrder = group?.groupOrderID ?? group?.GroupOrderID;
+          const order = Number.parseInt(rawOrder, 10);
           if (!Number.isFinite(order)) {
             return;
           }
