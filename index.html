@@ -405,7 +405,8 @@
 
       const REGIONALLIGA_NORD_FEED = {
         matchesUrl: './data/regionalliga-nord-matches.json',
-        tableUrl: './data/regionalliga-nord-table.json'
+        tableUrl: './data/regionalliga-nord-table.json',
+        cacheBust: '20251115'
       };
 
       const REGIONALLIGA_NORD_INLINE = {
@@ -1404,9 +1405,28 @@
         let usedInlineMatches = false;
         let usedInlineTable = false;
 
+        const withCacheBust = (url) => {
+          if (!url) {
+            return url;
+          }
+          const token = REGIONALLIGA_NORD_FEED.cacheBust;
+          if (!token) {
+            return url;
+          }
+          const [base, hash] = url.split('#');
+          const separator = base.includes('?') ? '&' : '?';
+          const cacheParam = `_=${encodeURIComponent(token)}`;
+          const rebuilt = `${base}${separator}${cacheParam}`;
+          return hash ? `${rebuilt}#${hash}` : rebuilt;
+        };
+
         if (REGIONALLIGA_NORD_FEED.matchesUrl) {
           try {
-            matchesJson = await fetchJsonWithCache(REGIONALLIGA_NORD_FEED.matchesUrl, { cacheKey: 'rln-matches', ttl: 30000 });
+            const matchesUrl = withCacheBust(REGIONALLIGA_NORD_FEED.matchesUrl);
+            const cacheKey = REGIONALLIGA_NORD_FEED.cacheBust
+              ? `rln-matches:${REGIONALLIGA_NORD_FEED.cacheBust}`
+              : 'rln-matches';
+            matchesJson = await fetchJsonWithCache(matchesUrl, { cacheKey, ttl: 30000 });
           } catch (error) {
             matchesError = error;
           }
@@ -1414,7 +1434,11 @@
 
         if (REGIONALLIGA_NORD_FEED.tableUrl) {
           try {
-            tableJson = await fetchJsonWithCache(REGIONALLIGA_NORD_FEED.tableUrl, { cacheKey: 'rln-table', ttl: 30000 });
+            const tableUrl = withCacheBust(REGIONALLIGA_NORD_FEED.tableUrl);
+            const cacheKey = REGIONALLIGA_NORD_FEED.cacheBust
+              ? `rln-table:${REGIONALLIGA_NORD_FEED.cacheBust}`
+              : 'rln-table';
+            tableJson = await fetchJsonWithCache(tableUrl, { cacheKey, ttl: 30000 });
           } catch (error) {
             tableError = error;
           }
