@@ -187,6 +187,10 @@
       font-size: 0.82rem;
     }
 
+    #results-table td {
+      white-space: normal;
+    }
+
     thead {
       background: rgba(148, 163, 184, 0.08);
     }
@@ -214,6 +218,7 @@
     .col-score {
       font-weight: 600;
       font-size: 0.95rem;
+      text-align: right;
     }
 
     .col-home {
@@ -224,9 +229,20 @@
       color: var(--muted);
     }
 
-    .col-status {
+    .col-home,
+    .col-away {
+      line-height: 1.25;
+    }
+
+    .team-name {
+      display: block;
+    }
+
+    .col-meta {
+      display: block;
+      font-size: 0.72rem;
       color: var(--muted);
-      font-size: 0.78rem;
+      margin-top: 0.1rem;
     }
 
     .empty-state {
@@ -289,14 +305,13 @@
         grid-template-columns: 1fr auto;
         grid-template-areas:
           "home score"
-          "away score"
-          "status status";
-        gap: 0.25rem 0.6rem;
-        padding: 0.6rem 0.65rem;
+          "away score";
+        gap: 0.2rem 0.5rem;
+        padding: 0.5rem 0.55rem;
         border: 1px solid rgba(148, 163, 184, 0.16);
         border-radius: 0.6rem;
         background: rgba(15, 23, 42, 0.7);
-        margin-bottom: 0.55rem;
+        margin-bottom: 0.45rem;
       }
 
       #results-table tbody tr:last-child {
@@ -306,7 +321,7 @@
       #results-table tbody tr td {
         padding: 0;
         border: 0;
-        font-size: 0.86rem;
+        font-size: 0.84rem;
       }
 
       #results-table tbody tr td:nth-child(1) {
@@ -321,13 +336,14 @@
         grid-area: score;
         justify-self: end;
         align-self: center;
-        font-size: 1.05rem;
+        font-size: 1rem;
       }
 
-      #results-table tbody tr td:nth-child(4) {
-        grid-area: status;
-        font-size: 0.75rem;
-        margin-top: 0.1rem;
+      #results-table tbody tr td:nth-child(1),
+      #results-table tbody tr td:nth-child(2) {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
       }
 
       #results-table tbody tr:hover {
@@ -377,7 +393,6 @@
               <th>Heim</th>
               <th>Gast</th>
               <th>Ergebnis</th>
-              <th>Status</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -1274,11 +1289,18 @@
           })
           .forEach((match) => {
             const row = document.createElement('tr');
+            const timeMeta = match.time && match.time !== '--:--'
+              ? `<span class="col-meta">${escapeHtml(match.time)}</span>`
+              : '';
             row.innerHTML = `
-              <td class="col-home">${escapeHtml(match.home)}</td>
-              <td class="col-away">${escapeHtml(match.away)}</td>
+              <td class="col-home">
+                <span class="team-name">${escapeHtml(match.home)}</span>
+                ${timeMeta}
+              </td>
+              <td class="col-away">
+                <span class="team-name">${escapeHtml(match.away)}</span>
+              </td>
               <td class="score col-score">${escapeHtml(match.score)}</td>
-              <td class="col-status">${escapeHtml(match.status)}</td>
             `;
             DOM.resultsBody.appendChild(row);
           });
