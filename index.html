@@ -183,6 +183,10 @@
       background: var(--card);
     }
 
+    #results-table {
+      font-size: 0.82rem;
+    }
+
     thead {
       background: rgba(148, 163, 184, 0.08);
     }
@@ -206,9 +210,23 @@
       padding: 0.85rem;
     }
 
-    td.score {
+    td.score,
+    .col-score {
       font-weight: 600;
       font-size: 0.95rem;
+    }
+
+    .col-home {
+      font-weight: 600;
+    }
+
+    .col-away {
+      color: var(--muted);
+    }
+
+    .col-status {
+      color: var(--muted);
+      font-size: 0.78rem;
     }
 
     .empty-state {
@@ -253,7 +271,67 @@
 
       th,
       td {
-        padding: 0.5rem;
+        padding: 0.45rem;
+      }
+
+      #results-table thead {
+        display: none;
+      }
+
+      #results-table,
+      #results-table tbody {
+        display: block;
+        width: 100%;
+      }
+
+      #results-table tbody tr {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+          "home score"
+          "away score"
+          "status status";
+        gap: 0.25rem 0.6rem;
+        padding: 0.6rem 0.65rem;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 0.6rem;
+        background: rgba(15, 23, 42, 0.7);
+        margin-bottom: 0.55rem;
+      }
+
+      #results-table tbody tr:last-child {
+        margin-bottom: 0;
+      }
+
+      #results-table tbody tr td {
+        padding: 0;
+        border: 0;
+        font-size: 0.86rem;
+      }
+
+      #results-table tbody tr td:nth-child(1) {
+        grid-area: home;
+      }
+
+      #results-table tbody tr td:nth-child(2) {
+        grid-area: away;
+      }
+
+      #results-table tbody tr td:nth-child(3) {
+        grid-area: score;
+        justify-self: end;
+        align-self: center;
+        font-size: 1.05rem;
+      }
+
+      #results-table tbody tr td:nth-child(4) {
+        grid-area: status;
+        font-size: 0.75rem;
+        margin-top: 0.1rem;
+      }
+
+      #results-table tbody tr:hover {
+        background: rgba(96, 165, 250, 0.12);
       }
     }
   </style>
@@ -1197,10 +1275,10 @@
           .forEach((match) => {
             const row = document.createElement('tr');
             row.innerHTML = `
-              <td>${escapeHtml(match.home)}</td>
-              <td>${escapeHtml(match.away)}</td>
-              <td class="score">${escapeHtml(match.score)}</td>
-              <td>${escapeHtml(match.status)}</td>
+              <td class="col-home">${escapeHtml(match.home)}</td>
+              <td class="col-away">${escapeHtml(match.away)}</td>
+              <td class="score col-score">${escapeHtml(match.score)}</td>
+              <td class="col-status">${escapeHtml(match.status)}</td>
             `;
             DOM.resultsBody.appendChild(row);
           });
