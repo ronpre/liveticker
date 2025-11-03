@@ -238,13 +238,6 @@
       display: block;
     }
 
-    .col-meta {
-      display: block;
-      font-size: 0.72rem;
-      color: var(--muted);
-      margin-top: 0.1rem;
-    }
-
     .empty-state {
       margin: 1.4rem 0 0;
       text-align: center;
@@ -1289,13 +1282,9 @@
           })
           .forEach((match) => {
             const row = document.createElement('tr');
-            const timeMeta = match.time && match.time !== '--:--'
-              ? `<span class="col-meta">${escapeHtml(match.time)}</span>`
-              : '';
             row.innerHTML = `
               <td class="col-home">
                 <span class="team-name">${escapeHtml(match.home)}</span>
-                ${timeMeta}
               </td>
               <td class="col-away">
                 <span class="team-name">${escapeHtml(match.away)}</span>
