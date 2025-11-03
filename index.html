@@ -207,6 +207,15 @@
       background: rgba(148, 163, 184, 0.12);
     }
 
+    #standings-table th:last-child,
+    #standings-table td:last-child {
+      text-align: right;
+    }
+
+    #standings-table td:last-child {
+      font-weight: 600;
+    }
+
     #standings-table tr.standings-empty td {
       text-align: center;
       font-style: italic;
@@ -221,17 +230,11 @@
       text-align: right;
     }
 
-    .col-home {
-      font-weight: 600;
-    }
-
-    .col-away {
-      color: var(--muted);
-    }
-
     .col-home,
     .col-away {
       line-height: 1.25;
+      font-weight: 600;
+      color: inherit;
     }
 
     .team-name {
@@ -402,9 +405,6 @@
             <tr>
               <th>Rang</th>
               <th>Team</th>
-              <th>S</th>
-              <th>U</th>
-              <th>N</th>
               <th>Pkt</th>
             </tr>
           </thead>
@@ -1305,7 +1305,7 @@
         if (!rows || !rows.length) {
           const emptyRow = document.createElement('tr');
           emptyRow.className = 'standings-empty';
-          emptyRow.innerHTML = `<td colspan="6">${escapeHtml(emptyMessage)}</td>`;
+          emptyRow.innerHTML = `<td colspan="3">${escapeHtml(emptyMessage)}</td>`;
           DOM.standingsBody.appendChild(emptyRow);
           return;
         }
@@ -1315,9 +1315,6 @@
           tr.innerHTML = `
             <td>${entry.rank ?? '-'}</td>
             <td>${escapeHtml(entry.team ?? '')}</td>
-            <td>${entry.wins ?? '-'}</td>
-            <td>${entry.draws ?? '-'}</td>
-            <td>${entry.losses ?? '-'}</td>
             <td>${entry.points ?? '-'}</td>
           `;
           DOM.standingsBody.appendChild(tr);
