@@ -375,6 +375,11 @@
           <select id="matchday-current" class="matchday-select" aria-label="Aktueller Spieltag"></select>
         </div>
       </div>
+
+      <div class="control hidden" id="date-control">
+        <label for="date-select">Datum</label>
+        <input type="date" id="date-select" />
+      </div>
     </section>
 
     <div id="status-box" role="status" aria-live="polite">Initialisiere Live-Daten …</div>
@@ -428,10 +433,12 @@
       const DOM = {
         sportSelect: document.getElementById('sport-select'),
         leagueControl: document.getElementById('league-control'),
-        leagueSelect: document.getElementById('league-select'),
-  matchdayGroup: document.getElementById('matchday-group'),
-  matchdayControl: document.getElementById('matchday-current')?.closest('.control'),
+    leagueSelect: document.getElementById('league-select'),
+    matchdayGroup: document.getElementById('matchday-group'),
+    matchdayControl: document.getElementById('matchday-current')?.closest('.control'),
         matchdayCurrent: document.getElementById('matchday-current'),
+    dateControl: document.getElementById('date-control'),
+    dateInput: document.getElementById('date-select'),
         statusBox: document.getElementById('status-box'),
         resultsTable: document.getElementById('results-table'),
         resultsBody: document.querySelector('#results-table tbody'),
@@ -556,6 +563,11 @@
         if (DOM.matchdayCurrent) {
           DOM.matchdayCurrent.addEventListener('change', onMatchdaySelect);
         }
+        if (DOM.dateInput) {
+          DOM.dateInput.value = state.date;
+          DOM.dateInput.addEventListener('change', onDateChange);
+        }
+        updateDateControlVisibility();
         window.addEventListener('focus', () => requestRefresh(true));
 
         requestRefresh(true);
@@ -577,6 +589,23 @@
         }, POLL_INTERVAL_MS);
       }
 
+      function onDateChange(event) {
+        const value = event?.target?.value;
+        const normalized = normalizeToIsoDate(value);
+        if (!normalized) {
+          syncDateInput();
+          return;
+        }
+        if (normalized === state.date) {
+          return;
+        }
+        state.date = normalized;
+        syncDateInput();
+        if (state.sport === 'tennis') {
+          requestRefresh(true);
+        }
+      }
+
       function onSportChange(event) {
         state.sport = event.target.value;
         if (state.sport !== 'football') {
@@ -590,7 +619,29 @@
           state.league = null;
         }
         populateLeagueOptions();
+        syncDateInput();
+        updateDateControlVisibility();
         requestRefresh(true);
+      }
+
+      function updateDateControlVisibility() {
+        const showDate = state.sport === 'tennis';
+        if (DOM.dateControl) {
+          DOM.dateControl.classList.toggle('hidden', !showDate);
+        }
+        if (DOM.dateInput) {
+          DOM.dateInput.disabled = !showDate;
+          if (showDate) {
+            DOM.dateInput.value = state.date ?? '';
+          }
+        }
+      }
+
+      function syncDateInput() {
+        if (!DOM.dateInput) {
+          return;
+        }
+        DOM.dateInput.value = state.date ?? '';
       }
 
       function onLeagueChange(event) {
@@ -709,6 +760,7 @@
         }
 
         state.date = normalizedDate;
+        syncDateInput();
         if (typeof targetOrder === 'number') {
           state.activeMatchdayOrder = targetOrder;
         }
