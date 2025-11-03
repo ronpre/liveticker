@@ -395,7 +395,7 @@
     </section>
 
     <section id="table-section" class="content-card hidden">
-      <h2>Tabellenstand</h2>
+      <h2>Tabelle</h2>
       <div class="table-wrapper">
         <table id="standings-table">
           <thead>
@@ -405,7 +405,6 @@
               <th>S</th>
               <th>U</th>
               <th>N</th>
-              <th>Tore</th>
               <th>Pkt</th>
             </tr>
           </thead>
@@ -1306,7 +1305,7 @@
         if (!rows || !rows.length) {
           const emptyRow = document.createElement('tr');
           emptyRow.className = 'standings-empty';
-          emptyRow.innerHTML = `<td colspan="7">${escapeHtml(emptyMessage)}</td>`;
+          emptyRow.innerHTML = `<td colspan="6">${escapeHtml(emptyMessage)}</td>`;
           DOM.standingsBody.appendChild(emptyRow);
           return;
         }
@@ -1319,7 +1318,6 @@
             <td>${entry.wins ?? '-'}</td>
             <td>${entry.draws ?? '-'}</td>
             <td>${entry.losses ?? '-'}</td>
-            <td>${escapeHtml(entry.goals ?? '')}</td>
             <td>${entry.points ?? '-'}</td>
           `;
           DOM.standingsBody.appendChild(tr);
@@ -1506,7 +1504,6 @@
           wins: entry.won ?? entry.Won,
           draws: entry.draw ?? entry.Draw,
           losses: entry.lost ?? entry.Lost,
-          goals: `${entry.goals ?? entry.Goals ?? 0}:${entry.opponentGoals ?? entry.OpponentGoals ?? 0}`,
           points: entry.points ?? entry.Points
         }));
       }
