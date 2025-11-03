@@ -406,7 +406,6 @@
               <th>U</th>
               <th>N</th>
               <th>Tore</th>
-              <th>Diff</th>
               <th>Pkt</th>
             </tr>
           </thead>
@@ -1307,7 +1306,7 @@
         if (!rows || !rows.length) {
           const emptyRow = document.createElement('tr');
           emptyRow.className = 'standings-empty';
-          emptyRow.innerHTML = `<td colspan="8">${escapeHtml(emptyMessage)}</td>`;
+          emptyRow.innerHTML = `<td colspan="7">${escapeHtml(emptyMessage)}</td>`;
           DOM.standingsBody.appendChild(emptyRow);
           return;
         }
@@ -1321,7 +1320,6 @@
             <td>${entry.draws ?? '-'}</td>
             <td>${entry.losses ?? '-'}</td>
             <td>${escapeHtml(entry.goals ?? '')}</td>
-            <td>${entry.diff ?? '-'}</td>
             <td>${entry.points ?? '-'}</td>
           `;
           DOM.standingsBody.appendChild(tr);
@@ -1509,7 +1507,6 @@
           draws: entry.draw ?? entry.Draw,
           losses: entry.lost ?? entry.Lost,
           goals: `${entry.goals ?? entry.Goals ?? 0}:${entry.opponentGoals ?? entry.OpponentGoals ?? 0}`,
-          diff: entry.goalDifference ?? entry.GoalDifference,
           points: entry.points ?? entry.Points
         }));
       }
