@@ -418,15 +418,17 @@
   </main>
 
   <footer>
-    <span>Automatische Aktualisierung alle 5&nbsp;ms (netzwerkschonender Abruf mit Drosselung). Bei ausbleibenden Live-Daten wird eine Simulation angezeigt.</span>
+    <span>Automatische Aktualisierung alle 2&nbsp;Minuten (netzwerkschonender Abruf mit Drosselung). Bei ausbleibenden Live-Daten wird eine Simulation angezeigt.</span>
   </footer>
 
   <script>
     (() => {
-      const POLL_INTERVAL_MS = 5; // UI loop cadence (requirement)
-      const MIN_FETCH_INTERVAL_MS = 5000; // throttle real network calls (protect remote APIs)
+      const POLL_INTERVAL_MS = 1000; // lightweight timer that checks whether a refresh is due
+      const MIN_FETCH_INTERVAL_MS = 120000; // throttle real network calls (protect remote APIs)
       const FETCH_TIMEOUT_MS = 12000;
       const OPENLIGA_BASE = 'https://api.openligadb.de';
+      const ESPN_FOOTBALL_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
+      const ESPN_STANDINGS_BASE = 'https://site.api.espn.com/apis/v2/sports/soccer';
 
       const DOM = {
         sportSelect: document.getElementById('sport-select'),
@@ -534,99 +536,35 @@
           id: 'bl1',
           label: '1. Liga',
           shortcut: 'bl1',
+          provider: 'openliga',
           table: true
         },
         {
           id: 'bl2',
           label: '2. Liga',
           shortcut: 'bl2',
+          provider: 'openliga',
           table: true
         },
         {
           id: 'bl3',
           label: '3. Liga',
           shortcut: 'bl3',
+          provider: 'openliga',
           table: true
         },
         {
           id: 'laliga',
           label: 'LL',
-          shortcut: (season) => {
-            const attempts = [];
-            const baseSeason = Number.isFinite(season) ? season : null;
-            const add = (shortcut, targetSeason = baseSeason) => {
-              if (!shortcut) {
-                return;
-              }
-              attempts.push({ shortcut, season: targetSeason });
-            };
-
-            const captureSeasonVariants = (seasonValue) => {
-              if (!Number.isFinite(seasonValue)) {
-                return;
-              }
-              const suffix = String(Math.abs(seasonValue)).slice(-2);
-              add(`laliga${suffix}`, seasonValue);
-              add(`pd${suffix}`, seasonValue);
-              add('laliga1', seasonValue);
-              add('pd1', seasonValue);
-              add('laliga', seasonValue);
-              add('pd', seasonValue);
-            };
-
-            if (baseSeason != null) {
-              captureSeasonVariants(baseSeason);
-              captureSeasonVariants(baseSeason - 1);
-              captureSeasonVariants(baseSeason - 2);
-            }
-
-            add('laliga1');
-            add('pd1');
-            add('laliga');
-            add('pd');
-            return attempts;
-          },
+          provider: 'espn',
+          espnSlug: 'esp.1',
           table: true
         },
         {
           id: 'pl',
           label: 'PL',
-          shortcut: (season) => {
-            const attempts = [];
-            const baseSeason = Number.isFinite(season) ? season : null;
-            const add = (shortcut, targetSeason = baseSeason) => {
-              if (!shortcut) {
-                return;
-              }
-              attempts.push({ shortcut, season: targetSeason });
-            };
-
-            const captureSeasonVariants = (seasonValue) => {
-              if (!Number.isFinite(seasonValue)) {
-                return;
-              }
-              const suffix = String(Math.abs(seasonValue)).slice(-2);
-              add(`pl${suffix}`, seasonValue);
-              add('pl1', seasonValue);
-              add('pl', seasonValue);
-              add('ukpl', seasonValue);
-              add('enpl', seasonValue);
-              add('pln1', seasonValue);
-            };
-
-            if (baseSeason != null) {
-              captureSeasonVariants(baseSeason);
-              captureSeasonVariants(baseSeason - 1);
-              captureSeasonVariants(baseSeason - 2);
-            }
-
-            add('pl1');
-            add('pl');
-            add('ukpl');
-            add('enpl');
-            add('pln1');
-            return attempts;
-          },
+          provider: 'espn',
+          espnSlug: 'eng.1',
           table: true
         }
       ];
@@ -1216,6 +1154,11 @@
             DOM.leagueSelect.value = leagueConfig.id;
           }
         }
+        const provider = leagueConfig?.provider || 'openliga';
+        if (provider === 'espn') {
+          await loadEspnFootball(leagueConfig);
+          return;
+        }
         const season = deriveFootballSeason(state.date);
         const attempts = resolveLeagueShortcuts(leagueConfig, season);
 
@@ -1332,6 +1275,307 @@
             : 'Keine Tabellen-Daten hinterlegt.';
           renderTable([], { emptyMessage });
         }
+      }
+
+      async function loadEspnFootball(leagueConfig) {
+        const slug = leagueConfig?.espnSlug;
+        const competitionLabel = leagueConfig?.label || 'Wettbewerb';
+        if (!slug) {
+          setStatus('Keine Datenquelle für ' + competitionLabel + ' hinterlegt.', 'error');
+          renderMatches([], 'Keine Spiele für den ausgewählten Spieltag gefunden.');
+          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          state.matchdays = [];
+          state.matchdayDateLookup = new Map();
+          state.activeMatchdayOrder = null;
+          updateMatchdayDisplay();
+          state.resolvedSeason = null;
+          state.resolvedShortcut = null;
+          return;
+        }
+
+        let scoreboard;
+        try {
+          scoreboard = await fetchEspnFootballScoreboard(slug);
+        } catch (error) {
+          state.matchdays = [];
+          state.matchdayDateLookup = new Map();
+          state.activeMatchdayOrder = null;
+          updateMatchdayDisplay();
+          renderMatches([], 'Keine Spiele für den ausgewählten Spieltag gefunden.');
+          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          setStatus('ESPN-Daten für ' + competitionLabel + ' konnten nicht geladen werden: ' + error.message, 'error');
+          state.resolvedSeason = null;
+          state.resolvedShortcut = null;
+          return;
+        }
+
+        const leagueInfo = Array.isArray(scoreboard?.leagues) ? scoreboard.leagues[0] : null;
+        const calendarDates = Array.isArray(leagueInfo?.calendar) ? leagueInfo.calendar : [];
+        const metadata = buildEspnMatchdayMetadata(calendarDates);
+
+        if (metadata.length) {
+          state.matchdays = metadata;
+          state.matchdayDateLookup = createMatchdayDateLookup(metadata);
+          ensureActiveMatchday(metadata);
+          const activeEntry = metadata.find((entry) => entry.order === state.activeMatchdayOrder) || metadata[0];
+          if (activeEntry) {
+            updateMatchdayState(activeEntry.primaryDate, activeEntry.order);
+          } else {
+            updateMatchdayDisplay();
+          }
+        } else {
+          state.matchdays = [];
+          state.matchdayDateLookup = new Map();
+          state.activeMatchdayOrder = null;
+          updateMatchdayDisplay();
+        }
+
+        state.resolvedSeason = scoreboard?.season?.year || leagueInfo?.season?.year || null;
+        state.resolvedShortcut = null;
+
+        const selectedEntry = state.matchdays.find((entry) => entry.order === state.activeMatchdayOrder) || state.matchdays[0] || null;
+        const aggregated = new Map();
+        const dateErrors = [];
+
+        if (selectedEntry?.dates?.length) {
+          for (const isoDate of selectedEntry.dates) {
+            try {
+              const dayScoreboard = await fetchEspnFootballScoreboard(slug, isoDate);
+              const matchesOfDay = extractEspnFootballMatches(dayScoreboard);
+              matchesOfDay.forEach((match) => {
+                if (match && !aggregated.has(match.id)) {
+                  aggregated.set(match.id, match);
+                }
+              });
+            } catch (error) {
+              dateErrors.push({ date: isoDate, error });
+            }
+          }
+        }
+
+        const matches = Array.from(aggregated.values());
+        const emptyMessage = 'Keine Spiele für den ausgewählten Spieltag gefunden.';
+
+        if (!matches.length) {
+          renderMatches([], emptyMessage);
+          if (dateErrors.length) {
+            const detail = dateErrors.map((entry) => entry.error?.message).filter(Boolean).join('; ');
+            setStatus('Keine Begegnungen für ' + competitionLabel + ' – Teilabrufe fehlgeschlagen' + (detail ? ` (${detail})` : ''), 'warning');
+          } else {
+            setStatus('Keine Begegnungen für ' + competitionLabel + ' gefunden.', 'warning');
+          }
+        } else {
+          renderMatches(matches, emptyMessage);
+          if (dateErrors.length) {
+            const failedDays = dateErrors.map((entry) => entry.date).filter(Boolean).join(', ');
+            setStatus('Daten für ' + competitionLabel + ' teilweise unvollständig (fehlende Tage: ' + failedDays + ').', 'warning');
+          }
+        }
+
+        if (leagueConfig.table) {
+          try {
+            const standingsData = await fetchEspnFootballStandings(leagueConfig.espnStandingsSlug || slug);
+            const rows = formatEspnFootballStandings(standingsData);
+            if (rows.length) {
+              renderTable(rows);
+            } else {
+              renderTable([], { emptyMessage: 'Keine Tabellen-Daten verfügbar.' });
+            }
+          } catch (error) {
+            renderTable([], { emptyMessage: 'Tabelle konnte nicht geladen werden.' });
+            setStatus('Tabelle für ' + competitionLabel + ' konnte nicht geladen werden: ' + error.message, 'warning');
+          }
+        } else {
+          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+        }
+      }
+
+      async function fetchEspnFootballScoreboard(slug, isoDate) {
+        if (!slug) {
+          throw new Error('ESPN-Slug fehlt.');
+        }
+        const normalizedDate = normalizeToIsoDate(isoDate);
+        const params = ['lang=de', 'region=de'];
+        if (normalizedDate) {
+          params.push('dates=' + normalizedDate.replace(/-/g, ''));
+        }
+        const url = `${ESPN_FOOTBALL_BASE}/${encodeURIComponent(slug)}/scoreboard?${params.join('&')}`;
+        const cacheKey = normalizedDate
+          ? `espn-football:scoreboard:${slug}:${normalizedDate}`
+          : `espn-football:scoreboard:${slug}:calendar`;
+        return fetchJsonWithCache(url, { cacheKey, ttl: 60000 });
+      }
+
+      function buildEspnMatchdayMetadata(calendar) {
+        if (!Array.isArray(calendar) || !calendar.length) {
+          return [];
+        }
+        const uniqueDates = Array.from(new Set(calendar.map((entry) => normalizeToIsoDate(entry)).filter(Boolean))).sort();
+        if (!uniqueDates.length) {
+          return [];
+        }
+        const groups = [];
+        let currentGroup = null;
+        uniqueDates.forEach((isoDate) => {
+          if (!currentGroup) {
+            currentGroup = { dates: [isoDate] };
+            groups.push(currentGroup);
+            return;
+          }
+          const lastDate = currentGroup.dates[currentGroup.dates.length - 1];
+          const delta = Math.abs(Date.parse(`${isoDate}T00:00:00Z`) - Date.parse(`${lastDate}T00:00:00Z`));
+          const dayDiff = Number.isFinite(delta) ? delta / 86400000 : Number.POSITIVE_INFINITY;
+          if (dayDiff <= 4) {
+            currentGroup.dates.push(isoDate);
+          } else {
+            currentGroup = { dates: [isoDate] };
+            groups.push(currentGroup);
+          }
+        });
+
+        return groups.map((group, index) => ({
+          order: index + 1,
+          label: `${index + 1}. Spieltag`,
+          primaryDate: group.dates[0] || null,
+          dates: group.dates
+        })).filter((entry) => entry.primaryDate);
+      }
+
+      async function fetchEspnFootballStandings(slug) {
+        if (!slug) {
+          throw new Error('ESPN-Slug fehlt.');
+        }
+        const url = `${ESPN_STANDINGS_BASE}/${encodeURIComponent(slug)}/standings?lang=de&region=de`;
+        const cacheKey = `espn-football:standings:${slug}`;
+        return fetchJsonWithCache(url, { cacheKey, ttl: 300000 });
+      }
+
+      function extractEspnFootballMatches(scoreboard) {
+        if (!scoreboard || !Array.isArray(scoreboard.events)) {
+          return [];
+        }
+        const matches = [];
+        scoreboard.events.forEach((event) => {
+          const competition = Array.isArray(event?.competitions) ? event.competitions[0] : null;
+          if (!competition) {
+            return;
+          }
+          const competitors = Array.isArray(competition.competitors) ? competition.competitors : [];
+          const home = competitors.find((entry) => entry.homeAway === 'home') || competitors[0];
+          const away = competitors.find((entry) => entry.homeAway === 'away') || competitors[1];
+          if (!home || !away) {
+            return;
+          }
+          const id = competition.id || event.id || competition.uid || event.uid;
+          matches.push({
+            id,
+            timeRaw: competition.date || competition.startDate || event.date || '',
+            time: formatTime(competition.date || competition.startDate || event.date),
+            home: home.team?.displayName || home.team?.shortDisplayName || home.team?.name || 'Heim',
+            away: away.team?.displayName || away.team?.shortDisplayName || away.team?.name || 'Gast',
+            score: formatEspnFootballScore(home, away, competition),
+            status: mapEspnFootballStatus(competition)
+          });
+        });
+        return matches;
+      }
+
+      function formatEspnFootballScore(home, away, competition) {
+        const parseScore = (value) => {
+          const numeric = Number.parseInt(value, 10);
+          return Number.isFinite(numeric) ? numeric : null;
+        };
+        const homeScore = parseScore(home?.score);
+        const awayScore = parseScore(away?.score);
+        const state = competition?.status?.type?.state;
+        const detail = competition?.status?.type?.shortDetail || competition?.status?.type?.detail;
+
+        if (state === 'pre') {
+          return '-- : --';
+        }
+
+        if ((state === 'in' || state === 'post') && homeScore != null && awayScore != null) {
+          let display = `${homeScore} : ${awayScore}`;
+          if (state === 'post' && detail && detail !== 'FT' && detail !== 'Full Time' && detail !== 'Final') {
+            display += ` (${detail})`;
+          }
+          return display;
+        }
+
+        if (homeScore != null && awayScore != null) {
+          return `${homeScore} : ${awayScore}`;
+        }
+
+        if (detail && detail !== 'TBD') {
+          return detail;
+        }
+
+        return '-- : --';
+      }
+
+      function mapEspnFootballStatus(competition) {
+        const state = competition?.status?.type?.state;
+        const name = competition?.status?.type?.name;
+        if (state === 'in') {
+          return 'Live';
+        }
+        if (state === 'post') {
+          if (name === 'STATUS_CANCELLED') {
+            return 'Abgebrochen';
+          }
+          if (name === 'STATUS_POSTPONED') {
+            return 'Verschoben';
+          }
+          return 'Beendet';
+        }
+        if (state === 'suspended') {
+          return 'Unterbrochen';
+        }
+        return 'Geplant';
+      }
+
+      function formatEspnFootballStandings(data) {
+        if (!data) {
+          return [];
+        }
+        const entries = [];
+
+        const collectEntries = (node) => {
+          if (!node) {
+            return;
+          }
+          if (Array.isArray(node?.standings?.entries)) {
+            node.standings.entries.forEach((entry) => entries.push(entry));
+          }
+          if (Array.isArray(node?.children)) {
+            node.children.forEach((child) => collectEntries(child));
+          }
+        };
+
+        collectEntries(data);
+
+        const seen = new Set();
+        const rows = [];
+        entries.forEach((entry, index) => {
+          const teamId = entry?.team?.id || entry?.team?.uid || index;
+          if (seen.has(teamId)) {
+            return;
+          }
+          seen.add(teamId);
+          const stats = Array.isArray(entry?.stats) ? entry.stats : [];
+          const findStat = (...names) => stats.find((stat) => names.includes(stat.name) || names.includes(stat.type));
+          const rankStat = findStat('rank');
+          const pointsStat = findStat('points');
+          const rankValue = rankStat?.displayValue || (Number.isFinite(rankStat?.value) ? String(rankStat.value) : entry?.note?.rank);
+          const pointsValue = pointsStat?.displayValue || (Number.isFinite(pointsStat?.value) ? String(pointsStat.value) : null);
+          rows.push({
+            rank: rankValue != null ? rankValue : String(rows.length + 1),
+            team: entry?.team?.displayName || entry?.team?.name || entry?.team?.shortDisplayName || 'Team',
+            points: pointsValue != null ? pointsValue : '-'
+          });
+        });
+
+        return rows;
       }
 
       async function loadTennis() {
