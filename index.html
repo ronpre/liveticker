@@ -457,7 +457,8 @@
         timerId: null,
         lastFetchStart: 0,
         fetchInFlight: false,
-        resolvedSeason: null
+        resolvedSeason: null,
+        resolvedShortcut: null
       };
 
       const cache = new Map();
@@ -527,6 +528,15 @@
         }
         return value;
       }
+      const CL_STAGE_LABELS = {
+        1: 'Ligaphase',
+        2: 'Play-offs',
+        3: 'Achtelfinale',
+        4: 'Viertelfinale',
+        5: 'Halbfinale',
+        6: 'Finale'
+      };
+
       const FOOTBALL_LEAGUES = [
         {
           id: 'bl1',
@@ -561,7 +571,83 @@
             entries.push({ shortcut: 'cl', season: baseSeason != null ? baseSeason : season });
             return entries;
           },
-          table: false
+          table: true
+        },
+        {
+          id: 'laliga',
+          label: 'La Liga',
+          shortcut: (season) => {
+            const attempts = [];
+            const baseSeason = Number.isFinite(season) ? season : null;
+            const add = (shortcut, targetSeason = baseSeason) => {
+              if (!shortcut) {
+                return;
+              }
+              attempts.push({ shortcut, season: targetSeason });
+            };
+
+            if (baseSeason != null) {
+              const suffix = String(Math.abs(baseSeason)).slice(-2);
+              add(`laliga${suffix}`, baseSeason);
+              add(`pd${suffix}`, baseSeason);
+              add('laliga1', baseSeason);
+              add('pd1', baseSeason);
+              add('laliga', baseSeason);
+              add('pd', baseSeason);
+
+              const previousSeason = baseSeason - 1;
+              add('laliga1', previousSeason);
+              add('pd1', previousSeason);
+              add('laliga', previousSeason);
+              add('pd', previousSeason);
+            }
+
+            add('laliga1');
+            add('pd1');
+            add('laliga');
+            add('pd');
+            return attempts;
+          },
+          table: true
+        },
+        {
+          id: 'pl',
+          label: 'Premier League',
+          shortcut: (season) => {
+            const attempts = [];
+            const baseSeason = Number.isFinite(season) ? season : null;
+            const add = (shortcut, targetSeason = baseSeason) => {
+              if (!shortcut) {
+                return;
+              }
+              attempts.push({ shortcut, season: targetSeason });
+            };
+
+            if (baseSeason != null) {
+              const suffix = String(Math.abs(baseSeason)).slice(-2);
+              add(`pl${suffix}`, baseSeason);
+              add('pl1', baseSeason);
+              add('pl', baseSeason);
+              add('ukpl', baseSeason);
+              add('enpl', baseSeason);
+              add('pln1', baseSeason);
+
+              const previousSeason = baseSeason - 1;
+              add('pl1', previousSeason);
+              add('pl', previousSeason);
+              add('ukpl', previousSeason);
+              add('enpl', previousSeason);
+              add('pln1', previousSeason);
+            }
+
+            add('pl1');
+            add('pl');
+            add('ukpl');
+            add('enpl');
+            add('pln1');
+            return attempts;
+          },
+          table: true
         }
       ];
       const TENNIS_SCOPE_LABEL = 'ATP Tour & Grand Slam';
@@ -1110,6 +1196,7 @@
         let rawData = [];
         let lastError = null;
         let resolvedSeason = season;
+        let resolvedAttempt = null;
 
         for (const attempt of attempts) {
           const targetShortcut = attempt?.shortcut;
@@ -1124,6 +1211,7 @@
             });
             if (Array.isArray(rawData) && rawData.length > 0) {
               resolvedSeason = targetSeason;
+              resolvedAttempt = { shortcut: targetShortcut, season: targetSeason };
               break;
             }
           } catch (error) {
@@ -1136,10 +1224,19 @@
           renderMatches([], 'Keine Spiele für den ausgewählten Tag gefunden.');
           renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
           setStatus('Keine Daten für ' + leagueConfig.label + ' verfügbar' + detail + '.', 'warning');
+          state.resolvedSeason = null;
+          state.resolvedShortcut = null;
           return;
         }
 
         state.resolvedSeason = resolvedSeason;
+        state.resolvedShortcut = resolvedAttempt?.shortcut || null;
+
+        if (Number.isFinite(season) && Number.isFinite(resolvedSeason) && resolvedSeason !== season) {
+          const resolvedLabel = `${resolvedSeason}/${String((resolvedSeason + 1) % 100).padStart(2, '0')}`;
+          const requestedLabel = `${season}/${String((season + 1) % 100).padStart(2, '0')}`;
+          setStatus(`OpenLigaDB liefert für ${leagueConfig.label} aktuell keine Daten für ${requestedLabel} – zeige Saison ${resolvedLabel}.`, 'warning');
+        }
 
         if (Array.isArray(rawData)) {
           let metadata = buildMatchdayMetadata(rawData);
@@ -1148,8 +1245,10 @@
               if (!entry) {
                 return entry;
               }
-              if (Number.isFinite(entry.order) && entry.order <= 6) {
-                return { ...entry, label: `${entry.order}. Spieltag` };
+              const isGenericLabel = typeof entry.label === 'string' && /^\d+\.\s*Spieltag$/.test(entry.label.trim());
+              const stageLabel = Number.isFinite(entry.order) ? CL_STAGE_LABELS[entry.order] : null;
+              if (stageLabel && (!entry.label || isGenericLabel)) {
+                return { ...entry, label: stageLabel };
               }
               if (entry.label) {
                 return entry;
@@ -1181,15 +1280,22 @@
 
         const allMatchesPlanned = matches.length > 0 && matches.every((entry) => entry.status === 'Geplant');
 
-        if (leagueConfig.table) {
+        const effectiveShortcut = resolvedAttempt?.shortcut
+          || attempts?.[0]?.shortcut
+          || (typeof leagueConfig.shortcut === 'string' ? leagueConfig.shortcut : null);
+        const effectiveSeason = Number.isFinite(resolvedAttempt?.season) ? resolvedAttempt.season : season;
+
+        if (leagueConfig.table && effectiveShortcut) {
           let matchday = deriveMatchday(rawData, matches);
           if (!Number.isFinite(matchday) && Number.isFinite(state.activeMatchdayOrder)) {
             matchday = state.activeMatchdayOrder;
           }
           if (!Number.isFinite(matchday)) {
-            matchday = await fetchCurrentGroup(leagueConfig.shortcut, season);
+            matchday = await fetchCurrentGroup(effectiveShortcut, effectiveSeason);
           }
-          const tableResult = await resolveFootballTable(leagueConfig.shortcut, season, matchday);
+          const tableResult = await resolveFootballTable(effectiveShortcut, season, matchday, {
+            preferredSeason: effectiveSeason
+          });
           if (tableResult.rows.length) {
             renderTable(tableResult.rows);
             if (tableResult.notice) {
@@ -1209,7 +1315,10 @@
             }
           }
         } else {
-          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          const emptyMessage = leagueConfig.table
+            ? 'Keine Tabellen-Daten verfügbar.'
+            : 'Keine Tabellen-Daten hinterlegt.';
+          renderTable([], { emptyMessage });
         }
       }
 
@@ -1549,7 +1658,10 @@
         }
       }
 
-      async function resolveFootballTable(shortcut, season, matchday) {
+      async function resolveFootballTable(shortcut, season, matchday, { preferredSeason } = {}) {
+        if (!shortcut) {
+          return { rows: [], error: null };
+        }
         const attempts = [];
         const seen = new Set();
 
@@ -1562,17 +1674,36 @@
           attempts.push({ season: targetSeason, matchday: targetMatchday });
         };
 
-        if (season) {
-          if (matchday) {
-            pushAttempt(season, matchday);
-            if (matchday > 1) {
-              pushAttempt(season, matchday - 1);
-            }
-          }
-          pushAttempt(season, null);
+        const expectedSeason = Number.isFinite(preferredSeason) ? preferredSeason : season;
+
+        const candidateSeasons = [];
+        if (Number.isFinite(preferredSeason)) {
+          candidateSeasons.push(preferredSeason);
         }
-        if (season) {
-          pushAttempt(season - 1, null);
+        if (Number.isFinite(season) && !candidateSeasons.includes(season)) {
+          candidateSeasons.push(season);
+        }
+
+        candidateSeasons.forEach((seasonValue) => {
+          if (Number.isFinite(seasonValue)) {
+            if (Number.isFinite(matchday)) {
+              pushAttempt(seasonValue, matchday);
+              if (matchday > 1) {
+                pushAttempt(seasonValue, matchday - 1);
+              }
+            }
+            pushAttempt(seasonValue, null);
+          }
+        });
+
+        candidateSeasons.forEach((seasonValue) => {
+          if (Number.isFinite(seasonValue)) {
+            pushAttempt(seasonValue - 1, null);
+          }
+        });
+
+        if (!attempts.length && Number.isFinite(expectedSeason)) {
+          pushAttempt(expectedSeason, Number.isFinite(matchday) ? matchday : null);
         }
 
         let lastError = null;
@@ -1585,7 +1716,8 @@
             });
             if (Array.isArray(data) && data.length) {
               const formatted = formatTable(data);
-              const notice = attempt.season !== season
+              const baseSeason = Number.isFinite(expectedSeason) ? expectedSeason : season;
+              const notice = Number.isFinite(baseSeason) && attempt.season !== baseSeason
                 ? `Tabelle der Saison ${attempt.season}/${String((attempt.season + 1) % 100).padStart(2, '0')} als Fallback.`
                 : null;
               return { rows: formatted, notice };
