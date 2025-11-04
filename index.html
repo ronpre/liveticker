@@ -453,6 +453,7 @@
         league: null,
         date: defaultDate,
         matchdays: [],
+        matchdayDateLookup: new Map(),
         activeMatchdayOrder: null,
         timerId: null,
         lastFetchStart: 0,
@@ -751,6 +752,7 @@
         state.sport = event.target.value;
         if (state.sport !== 'football') {
           state.matchdays = [];
+          state.matchdayDateLookup = new Map();
           state.activeMatchdayOrder = null;
           updateMatchdayDisplay();
         }
@@ -868,6 +870,16 @@
           targetEntry = matchdays.find((entry) => entry.primaryDate === normalizedInputDate || entry.dates?.includes(normalizedInputDate)) || null;
           if (targetEntry) {
             targetOrder = targetEntry.order;
+          }
+        }
+
+        if (!targetEntry && normalizedInputDate && state.matchdayDateLookup instanceof Map) {
+          const mappedOrder = state.matchdayDateLookup.get(normalizedInputDate);
+          if (Number.isFinite(mappedOrder)) {
+            targetEntry = matchdays.find((entry) => entry.order === mappedOrder) || targetEntry;
+            if (targetEntry) {
+              targetOrder = targetEntry.order;
+            }
           }
         }
 
@@ -1101,6 +1113,66 @@
           .sort((a, b) => a.order - b.order);
       }
 
+      function buildClusteredMatchdayMetadata(matches) {
+        const uniqueDates = Array.from(
+          new Set(
+            (Array.isArray(matches) ? matches : [])
+              .map((match) => normalizeToIsoDate(match?.matchDateTimeUTC || match?.matchDateTime))
+              .filter(Boolean)
+          )
+        ).sort();
+        if (uniqueDates.length <= 1) {
+          return [];
+        }
+        const clusters = [];
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const THRESHOLD_DAYS = 3;
+        let currentCluster = [];
+        uniqueDates.forEach((isoDate) => {
+          if (!currentCluster.length) {
+            currentCluster.push(isoDate);
+            return;
+          }
+          const previousIso = currentCluster[currentCluster.length - 1];
+          const deltaMs = Date.parse(isoDate + 'T00:00:00Z') - Date.parse(previousIso + 'T00:00:00Z');
+          if (deltaMs <= THRESHOLD_DAYS * DAY_MS) {
+            currentCluster.push(isoDate);
+            return;
+          }
+          clusters.push(currentCluster);
+          currentCluster = [isoDate];
+        });
+        if (currentCluster.length) {
+          clusters.push(currentCluster);
+        }
+        return clusters.map((dates, index) => ({
+          order: index + 1,
+          label: `Ligaphase - Spieltag ${String(index + 1).padStart(2, '0')}`,
+          primaryDate: dates[0],
+          dates
+        }));
+      }
+
+      function createMatchdayDateLookup(matchdays) {
+        const lookup = new Map();
+        if (!Array.isArray(matchdays)) {
+          return lookup;
+        }
+        matchdays.forEach((entry) => {
+          if (!entry || typeof entry.order !== 'number' || !Array.isArray(entry.dates)) {
+            return;
+          }
+          entry.dates.forEach((isoDate) => {
+            const normalized = normalizeToIsoDate(isoDate);
+            if (!normalized || lookup.has(normalized)) {
+              return;
+            }
+            lookup.set(normalized, entry.order);
+          });
+        });
+        return lookup;
+      }
+
       function normalizeToIsoDate(value) {
         if (!value) {
           return null;
@@ -1280,6 +1352,10 @@
         if (Array.isArray(rawData)) {
           let metadata = buildMatchdayMetadata(rawData);
           if (leagueConfig.id === 'cl') {
+            const clustered = buildClusteredMatchdayMetadata(rawData);
+            if (metadata.length <= 1 && clustered.length > metadata.length) {
+              metadata = clustered;
+            }
             metadata = metadata.map((entry) => {
               if (!entry) {
                 return entry;
@@ -1296,10 +1372,12 @@
             });
           }
           state.matchdays = metadata;
+          state.matchdayDateLookup = createMatchdayDateLookup(metadata);
           ensureActiveMatchday(metadata);
           updateMatchdayDisplay();
         } else {
           state.matchdays = [];
+          state.matchdayDateLookup = new Map();
           state.activeMatchdayOrder = null;
           updateMatchdayDisplay();
         }
@@ -1626,11 +1704,22 @@
         if (!match) {
           return false;
         }
+        const isoDate = normalizeToIsoDate(match.matchDateTimeUTC || match.matchDateTime);
+        if (typeof state.activeMatchdayOrder === 'number' && Number.isFinite(state.activeMatchdayOrder)) {
+          const matchdays = Array.isArray(state.matchdays) ? state.matchdays : [];
+          const activeEntry = matchdays.find((entry) => entry.order === state.activeMatchdayOrder);
+          if (activeEntry?.dates?.length && isoDate && activeEntry.dates.includes(isoDate)) {
+            return true;
+          }
+        }
         const group = match.group || match.Group;
         const rawOrder = group?.groupOrderID ?? group?.GroupOrderID;
         const matchdayOrder = rawOrder != null ? Number.parseInt(rawOrder, 10) : NaN;
         if (typeof state.activeMatchdayOrder === 'number' && Number.isFinite(state.activeMatchdayOrder) && Number.isFinite(matchdayOrder)) {
           return matchdayOrder === state.activeMatchdayOrder;
+        }
+        if (isoDate && state.matchdayDateLookup instanceof Map && state.matchdayDateLookup.get(isoDate) === state.activeMatchdayOrder) {
+          return true;
         }
         return matchesSelectedDate(match.matchDateTimeUTC || match.matchDateTime, state.date);
       }
