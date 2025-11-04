@@ -575,7 +575,7 @@
         },
         {
           id: 'laliga',
-          label: 'La Liga',
+          label: 'LL',
           shortcut: (season) => {
             const attempts = [];
             const baseSeason = Number.isFinite(season) ? season : null;
@@ -586,20 +586,23 @@
               attempts.push({ shortcut, season: targetSeason });
             };
 
-            if (baseSeason != null) {
-              const suffix = String(Math.abs(baseSeason)).slice(-2);
-              add(`laliga${suffix}`, baseSeason);
-              add(`pd${suffix}`, baseSeason);
-              add('laliga1', baseSeason);
-              add('pd1', baseSeason);
-              add('laliga', baseSeason);
-              add('pd', baseSeason);
+            const captureSeasonVariants = (seasonValue) => {
+              if (!Number.isFinite(seasonValue)) {
+                return;
+              }
+              const suffix = String(Math.abs(seasonValue)).slice(-2);
+              add(`laliga${suffix}`, seasonValue);
+              add(`pd${suffix}`, seasonValue);
+              add('laliga1', seasonValue);
+              add('pd1', seasonValue);
+              add('laliga', seasonValue);
+              add('pd', seasonValue);
+            };
 
-              const previousSeason = baseSeason - 1;
-              add('laliga1', previousSeason);
-              add('pd1', previousSeason);
-              add('laliga', previousSeason);
-              add('pd', previousSeason);
+            if (baseSeason != null) {
+              captureSeasonVariants(baseSeason);
+              captureSeasonVariants(baseSeason - 1);
+              captureSeasonVariants(baseSeason - 2);
             }
 
             add('laliga1');
@@ -612,7 +615,7 @@
         },
         {
           id: 'pl',
-          label: 'Premier League',
+          label: 'PL',
           shortcut: (season) => {
             const attempts = [];
             const baseSeason = Number.isFinite(season) ? season : null;
@@ -623,21 +626,23 @@
               attempts.push({ shortcut, season: targetSeason });
             };
 
-            if (baseSeason != null) {
-              const suffix = String(Math.abs(baseSeason)).slice(-2);
-              add(`pl${suffix}`, baseSeason);
-              add('pl1', baseSeason);
-              add('pl', baseSeason);
-              add('ukpl', baseSeason);
-              add('enpl', baseSeason);
-              add('pln1', baseSeason);
+            const captureSeasonVariants = (seasonValue) => {
+              if (!Number.isFinite(seasonValue)) {
+                return;
+              }
+              const suffix = String(Math.abs(seasonValue)).slice(-2);
+              add(`pl${suffix}`, seasonValue);
+              add('pl1', seasonValue);
+              add('pl', seasonValue);
+              add('ukpl', seasonValue);
+              add('enpl', seasonValue);
+              add('pln1', seasonValue);
+            };
 
-              const previousSeason = baseSeason - 1;
-              add('pl1', previousSeason);
-              add('pl', previousSeason);
-              add('ukpl', previousSeason);
-              add('enpl', previousSeason);
-              add('pln1', previousSeason);
+            if (baseSeason != null) {
+              captureSeasonVariants(baseSeason);
+              captureSeasonVariants(baseSeason - 1);
+              captureSeasonVariants(baseSeason - 2);
             }
 
             add('pl1');
