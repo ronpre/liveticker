@@ -529,27 +529,6 @@
         }
         return value;
       }
-      const CL_STAGE_LABELS = {
-        1: 'Ligaphase',
-        2: 'Play-offs',
-        3: 'Achtelfinale',
-        4: 'Viertelfinale',
-        5: 'Halbfinale',
-        6: 'Finale'
-      };
-      const CL_MEN_LEAGUE_FALLBACKS = [
-        { shortcut: 'ucl2025', season: 2025 },
-        { shortcut: 'ucl2024', season: 2024 },
-        { shortcut: 'uefacl22', season: 2022 },
-        { shortcut: 'ucl2020', season: 2020 },
-        { shortcut: 'cl2018', season: 2018 },
-        { shortcut: 'cl2017', season: 2017 },
-        { shortcut: 'cl1617', season: 2016 },
-        { shortcut: 'cl1516', season: 2015 },
-        { shortcut: 'cl1112', season: 2011 },
-        { shortcut: 'cl1011', season: 2010 }
-      ].sort((a, b) => b.season - a.season);
-
       const FOOTBALL_LEAGUES = [
         {
           id: 'bl1',
@@ -567,45 +546,6 @@
           id: 'bl3',
           label: '3. Liga',
           shortcut: 'bl3',
-          table: true
-        },
-        {
-          id: 'cl',
-          label: 'CL',
-          shortcut: (season) => {
-            const entries = [];
-            const baseSeason = Number.isFinite(season) ? season : null;
-            const addSeasonShortcut = (seasonValue) => {
-              if (!Number.isFinite(seasonValue) || seasonValue <= 0) {
-                return;
-              }
-              entries.push({ shortcut: `ucl${seasonValue}`, season: seasonValue });
-            };
-            if (baseSeason != null) {
-              addSeasonShortcut(baseSeason);
-              addSeasonShortcut(baseSeason - 1);
-              addSeasonShortcut(baseSeason - 2);
-            }
-            const fallbackCandidates = CL_MEN_LEAGUE_FALLBACKS.filter((entry) => {
-              if (!Number.isFinite(entry?.season)) {
-                return false;
-              }
-              if (baseSeason == null) {
-                return true;
-              }
-              return entry.season <= baseSeason;
-            });
-            const prioritizedFallbacks = fallbackCandidates.length
-              ? fallbackCandidates
-              : CL_MEN_LEAGUE_FALLBACKS;
-            prioritizedFallbacks.forEach((entry) => {
-              if (!entry?.shortcut) {
-                return;
-              }
-              entries.push({ shortcut: entry.shortcut, season: entry.season });
-            });
-            return entries;
-          },
           table: true
         },
         {
@@ -1113,46 +1053,6 @@
           .sort((a, b) => a.order - b.order);
       }
 
-      function buildClusteredMatchdayMetadata(matches) {
-        const uniqueDates = Array.from(
-          new Set(
-            (Array.isArray(matches) ? matches : [])
-              .map((match) => normalizeToIsoDate(match?.matchDateTimeUTC || match?.matchDateTime))
-              .filter(Boolean)
-          )
-        ).sort();
-        if (uniqueDates.length <= 1) {
-          return [];
-        }
-        const clusters = [];
-        const DAY_MS = 24 * 60 * 60 * 1000;
-        const THRESHOLD_DAYS = 3;
-        let currentCluster = [];
-        uniqueDates.forEach((isoDate) => {
-          if (!currentCluster.length) {
-            currentCluster.push(isoDate);
-            return;
-          }
-          const previousIso = currentCluster[currentCluster.length - 1];
-          const deltaMs = Date.parse(isoDate + 'T00:00:00Z') - Date.parse(previousIso + 'T00:00:00Z');
-          if (deltaMs <= THRESHOLD_DAYS * DAY_MS) {
-            currentCluster.push(isoDate);
-            return;
-          }
-          clusters.push(currentCluster);
-          currentCluster = [isoDate];
-        });
-        if (currentCluster.length) {
-          clusters.push(currentCluster);
-        }
-        return clusters.map((dates, index) => ({
-          order: index + 1,
-          label: `Ligaphase - Spieltag ${String(index + 1).padStart(2, '0')}`,
-          primaryDate: dates[0],
-          dates
-        }));
-      }
-
       function createMatchdayDateLookup(matchdays) {
         const lookup = new Map();
         if (!Array.isArray(matchdays)) {
@@ -1209,17 +1109,26 @@
         if (state.sport === 'football') {
           DOM.leagueControl.classList.remove('hidden');
           DOM.leagueSelect.disabled = false;
+          let matchedLeague = false;
           FOOTBALL_LEAGUES.forEach((league) => {
             const option = document.createElement('option');
             option.value = league.id;
             option.textContent = league.label;
             if (league.id === state.league) {
               option.selected = true;
+              matchedLeague = true;
             }
             DOM.leagueSelect.appendChild(option);
           });
-          if (!state.league) {
+          if (!matchedLeague && DOM.leagueSelect.options.length) {
+            DOM.leagueSelect.options[0].selected = true;
+            state.league = DOM.leagueSelect.options[0].value;
+          }
+          if (!state.league && FOOTBALL_LEAGUES.length) {
             state.league = FOOTBALL_LEAGUES[0].id;
+          }
+          if (state.league) {
+            DOM.leagueSelect.value = state.league;
           }
         } else {
           DOM.leagueControl.classList.add('hidden');
@@ -1301,6 +1210,12 @@
 
       async function loadFootball() {
         const leagueConfig = FOOTBALL_LEAGUES.find((league) => league.id === state.league) || FOOTBALL_LEAGUES[0];
+        if (leagueConfig && leagueConfig.id !== state.league) {
+          state.league = leagueConfig.id;
+          if (DOM.leagueSelect) {
+            DOM.leagueSelect.value = leagueConfig.id;
+          }
+        }
         const season = deriveFootballSeason(state.date);
         const attempts = resolveLeagueShortcuts(leagueConfig, season);
 
@@ -1350,27 +1265,7 @@
         }
 
         if (Array.isArray(rawData)) {
-          let metadata = buildMatchdayMetadata(rawData);
-          if (leagueConfig.id === 'cl') {
-            const clustered = buildClusteredMatchdayMetadata(rawData);
-            if (metadata.length <= 1 && clustered.length > metadata.length) {
-              metadata = clustered;
-            }
-            metadata = metadata.map((entry) => {
-              if (!entry) {
-                return entry;
-              }
-              const isGenericLabel = typeof entry.label === 'string' && /^\d+\.\s*Spieltag$/.test(entry.label.trim());
-              const stageLabel = Number.isFinite(entry.order) ? CL_STAGE_LABELS[entry.order] : null;
-              if (stageLabel && (!entry.label || isGenericLabel)) {
-                return { ...entry, label: stageLabel };
-              }
-              if (entry.label) {
-                return entry;
-              }
-              return { ...entry, label: `${entry.order}. Spieltag` };
-            });
-          }
+          const metadata = buildMatchdayMetadata(rawData);
           state.matchdays = metadata;
           state.matchdayDateLookup = createMatchdayDateLookup(metadata);
           ensureActiveMatchday(metadata);
