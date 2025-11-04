@@ -536,6 +536,18 @@
         5: 'Halbfinale',
         6: 'Finale'
       };
+      const CL_MEN_LEAGUE_FALLBACKS = [
+        { shortcut: 'ucl2025', season: 2025 },
+        { shortcut: 'ucl2024', season: 2024 },
+        { shortcut: 'uefacl22', season: 2022 },
+        { shortcut: 'ucl2020', season: 2020 },
+        { shortcut: 'cl2018', season: 2018 },
+        { shortcut: 'cl2017', season: 2017 },
+        { shortcut: 'cl1617', season: 2016 },
+        { shortcut: 'cl1516', season: 2015 },
+        { shortcut: 'cl1112', season: 2011 },
+        { shortcut: 'cl1011', season: 2010 }
+      ];
 
       const FOOTBALL_LEAGUES = [
         {
@@ -562,18 +574,20 @@
           shortcut: (season) => {
             const entries = [];
             const baseSeason = Number.isFinite(season) ? season : null;
-            if (baseSeason != null) {
-              entries.push({ shortcut: `ucl${baseSeason}`, season: baseSeason });
-              if (baseSeason > 0) {
-                entries.push({ shortcut: `ucl${baseSeason - 1}`, season: baseSeason - 1 });
+            const addSeasonShortcut = (seasonValue) => {
+              if (!Number.isFinite(seasonValue) || seasonValue <= 0) {
+                return;
               }
-              if (baseSeason > 1) {
-                entries.push({ shortcut: `ucl${baseSeason - 2}`, season: baseSeason - 2 });
-              }
-            }
+              entries.push({ shortcut: `ucl${seasonValue}`, season: seasonValue });
+            };
             if (baseSeason != null) {
-              entries.push({ shortcut: 'ucl', season: baseSeason }); // men-only fallback shortcut
+              addSeasonShortcut(baseSeason);
+              addSeasonShortcut(baseSeason - 1);
+              addSeasonShortcut(baseSeason - 2);
             }
+            CL_MEN_LEAGUE_FALLBACKS.forEach((entry) => {
+              entries.push({ shortcut: entry.shortcut, season: entry.season });
+            });
             return entries;
           },
           table: true
