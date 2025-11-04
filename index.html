@@ -456,7 +456,8 @@
         activeMatchdayOrder: null,
         timerId: null,
         lastFetchStart: 0,
-        fetchInFlight: false
+        fetchInFlight: false,
+        resolvedSeason: null
       };
 
       const cache = new Map();
@@ -547,9 +548,19 @@
         },
         {
           id: 'cl',
-          label: 'Champions League',
-          shortcut: (season) => (season ? `ucl${season}` : 'ucl2024'),
-          alternatives: ['cl'],
+          label: 'CL',
+          shortcut: (season) => {
+            const entries = [];
+            const baseSeason = Number.isFinite(season) ? season : null;
+            if (baseSeason != null) {
+              entries.push({ shortcut: `ucl${baseSeason}`, season: baseSeason });
+              if (baseSeason > 0) {
+                entries.push({ shortcut: `ucl${baseSeason - 1}`, season: baseSeason - 1 });
+              }
+            }
+            entries.push({ shortcut: 'cl', season: baseSeason != null ? baseSeason : season });
+            return entries;
+          },
           table: false
         }
       ];
@@ -1020,18 +1031,48 @@
       }
 
       function resolveLeagueShortcuts(leagueConfig, season) {
-        const toArray = (value) => {
+        const toEntries = (value) => {
           if (typeof value === 'function') {
-            return toArray(value(season));
+            return toEntries(value(season));
           }
           if (Array.isArray(value)) {
-            return value.flatMap((entry) => toArray(entry));
+            return value.flatMap((entry) => toEntries(entry));
           }
-          return value ? [value] : [];
+          if (!value) {
+            return [];
+          }
+          if (typeof value === 'object') {
+            const shortcut = value.shortcut ?? value.id ?? value.code;
+            if (!shortcut) {
+              return [];
+            }
+            const attemptSeason = Number.isFinite(value.season) ? value.season : season;
+            return [{ shortcut, season: attemptSeason }];
+          }
+          return [{ shortcut: String(value), season }];
         };
 
-        const candidates = [...toArray(leagueConfig.shortcut), ...toArray(leagueConfig.alternatives)];
-        return candidates.filter((entry, index) => candidates.indexOf(entry) === index);
+        const rawEntries = [...toEntries(leagueConfig.shortcut), ...toEntries(leagueConfig.alternatives)];
+        const seen = new Set();
+        const unique = [];
+        rawEntries.forEach((entry) => {
+          if (!entry || !entry.shortcut) {
+            return;
+          }
+          const normalizedSeason = Number.isFinite(entry.season) ? entry.season : season;
+          const key = `${entry.shortcut}:${normalizedSeason ?? ''}`;
+          if (seen.has(key)) {
+            return;
+          }
+          seen.add(key);
+          unique.push({ shortcut: entry.shortcut, season: normalizedSeason });
+        });
+
+        if (!unique.length && leagueConfig.shortcut) {
+          unique.push({ shortcut: String(leagueConfig.shortcut), season });
+        }
+
+        return unique;
       }
 
       async function requestRefresh(explicit) {
@@ -1064,15 +1105,25 @@
       async function loadFootball() {
         const leagueConfig = FOOTBALL_LEAGUES.find((league) => league.id === state.league) || FOOTBALL_LEAGUES[0];
         const season = deriveFootballSeason(state.date);
-        const shortcuts = resolveLeagueShortcuts(leagueConfig, season);
+        const attempts = resolveLeagueShortcuts(leagueConfig, season);
 
         let rawData = [];
         let lastError = null;
+        let resolvedSeason = season;
 
-        for (const shortcut of shortcuts) {
+        for (const attempt of attempts) {
+          const targetShortcut = attempt?.shortcut;
+          const targetSeason = Number.isFinite(attempt?.season) ? attempt.season : season;
+          if (!targetShortcut || !Number.isFinite(targetSeason)) {
+            continue;
+          }
           try {
-            rawData = await fetchJsonWithCache(`${OPENLIGA_BASE}/getmatchdata/${shortcut}/${season}`, { cacheKey: `matches:${shortcut}:${season}`, ttl: 60000 });
+            rawData = await fetchJsonWithCache(`${OPENLIGA_BASE}/getmatchdata/${targetShortcut}/${targetSeason}`, {
+              cacheKey: `matches:${targetShortcut}:${targetSeason}`,
+              ttl: 60000
+            });
             if (Array.isArray(rawData) && rawData.length > 0) {
+              resolvedSeason = targetSeason;
               break;
             }
           } catch (error) {
@@ -1087,6 +1138,8 @@
           setStatus('Keine Daten für ' + leagueConfig.label + ' verfügbar' + detail + '.', 'warning');
           return;
         }
+
+        state.resolvedSeason = resolvedSeason;
 
         if (Array.isArray(rawData)) {
           let metadata = buildMatchdayMetadata(rawData);
