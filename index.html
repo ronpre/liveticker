@@ -1200,7 +1200,11 @@
         if (!Array.isArray(rawData) || rawData.length === 0) {
           const detail = lastError ? ` (${lastError.message})` : '';
           renderMatches([], 'Keine Spiele für den ausgewählten Tag gefunden.');
-          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          if (leagueConfig.table) {
+            renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          } else {
+            hideTable();
+          }
           setStatus('Keine Daten für ' + leagueConfig.label + ' verfügbar' + detail + '.', 'warning');
           state.resolvedSeason = null;
           state.resolvedShortcut = null;
@@ -1237,7 +1241,8 @@
             home: match.team1?.teamName || match.Team1?.TeamName || 'Heim',
             away: match.team2?.teamName || match.Team2?.TeamName || 'Gast',
             score: formatScore(match.matchResults || match.MatchResults),
-            status: deriveMatchStatus(match)
+            status: deriveMatchStatus(match),
+            ...extractOpenligaScoreDetails(match)
           }));
 
         renderMatches(matches, 'Keine Spiele für den ausgewählten Tag gefunden.');
@@ -1249,7 +1254,7 @@
           || (typeof leagueConfig.shortcut === 'string' ? leagueConfig.shortcut : null);
         const effectiveSeason = Number.isFinite(resolvedAttempt?.season) ? resolvedAttempt.season : season;
 
-        if (leagueConfig.table && effectiveShortcut) {
+    if (leagueConfig.table && effectiveShortcut) {
           let matchday = deriveMatchday(rawData, matches);
           if (!Number.isFinite(matchday) && Number.isFinite(state.activeMatchdayOrder)) {
             matchday = state.activeMatchdayOrder;
@@ -1279,10 +1284,11 @@
             }
           }
         } else {
-          const emptyMessage = leagueConfig.table
-            ? 'Keine Tabellen-Daten verfügbar.'
-            : 'Keine Tabellen-Daten hinterlegt.';
-          renderTable([], { emptyMessage });
+          if (leagueConfig.table) {
+            renderTable([], { emptyMessage: 'Keine Tabellen-Daten verfügbar.' });
+          } else {
+            hideTable();
+          }
         }
       }
 
@@ -1292,7 +1298,11 @@
         if (!slug) {
           setStatus('Keine Datenquelle für ' + competitionLabel + ' hinterlegt.', 'error');
           renderMatches([], 'Keine Spiele für den ausgewählten Spieltag gefunden.');
-          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          if (leagueConfig.table) {
+            renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          } else {
+            hideTable();
+          }
           state.matchdays = [];
           state.matchdayDateLookup = new Map();
           state.activeMatchdayOrder = null;
@@ -1311,7 +1321,11 @@
           state.activeMatchdayOrder = null;
           updateMatchdayDisplay();
           renderMatches([], 'Keine Spiele für den ausgewählten Spieltag gefunden.');
-          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          if (leagueConfig.table) {
+            renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          } else {
+            hideTable();
+          }
           setStatus('ESPN-Daten für ' + competitionLabel + ' konnten nicht geladen werden: ' + error.message, 'error');
           state.resolvedSeason = null;
           state.resolvedShortcut = null;
@@ -1428,7 +1442,7 @@
             setStatus('Tabelle für ' + competitionLabel + ' konnte nicht geladen werden: ' + error.message, 'warning');
           }
         } else {
-          renderTable([], { emptyMessage: 'Keine Tabellen-Daten hinterlegt.' });
+          hideTable();
         }
       }
 
@@ -1509,6 +1523,10 @@
             return;
           }
           const id = String(competition.id || event.id || competition.uid || event.uid || '');
+          const status = mapEspnFootballStatus(competition);
+          const homeScore = parseScoreValue(home?.score);
+          const awayScore = parseScoreValue(away?.score);
+          const winner = status === 'Beendet' ? determineWinner(homeScore, awayScore) : null;
           matches.push({
             id,
             timeRaw: competition.date || competition.startDate || event.date || '',
@@ -1516,7 +1534,10 @@
             home: home.team?.displayName || home.team?.shortDisplayName || home.team?.name || 'Heim',
             away: away.team?.displayName || away.team?.shortDisplayName || away.team?.name || 'Gast',
             score: formatEspnFootballScore(home, away, competition),
-            status: mapEspnFootballStatus(competition)
+            status,
+            homeScore,
+            awayScore,
+            winner
           });
         });
         return matches;
@@ -1627,12 +1648,8 @@
       }
 
       function formatEspnFootballScore(home, away, competition) {
-        const parseScore = (value) => {
-          const numeric = Number.parseInt(value, 10);
-          return Number.isFinite(numeric) ? numeric : null;
-        };
-        const homeScore = parseScore(home?.score);
-        const awayScore = parseScore(away?.score);
+        const homeScore = parseScoreValue(home?.score);
+        const awayScore = parseScoreValue(away?.score);
         const state = competition?.status?.type?.state;
         const detail = competition?.status?.type?.shortDetail || competition?.status?.type?.detail;
 
@@ -1929,13 +1946,21 @@
             return a.home.localeCompare(b.home);
           })
           .forEach((match) => {
+            const status = match?.status;
+            const resolvedWinner = match?.winner || (status === 'Beendet' ? determineWinner(match?.homeScore, match?.awayScore) : null);
+            const homeWinner = resolvedWinner === 'home';
+            const awayWinner = resolvedWinner === 'away';
+            const homeName = escapeHtml(match?.home ?? 'Heim');
+            const awayName = escapeHtml(match?.away ?? 'Gast');
+            const homeContent = homeWinner ? `<strong>${homeName}</strong>` : homeName;
+            const awayContent = awayWinner ? `<strong>${awayName}</strong>` : awayName;
             const row = document.createElement('tr');
             row.innerHTML = `
               <td class="col-home">
-                <span class="team-name">${escapeHtml(match.home)}</span>
+                <span class="team-name">${homeContent}</span>
               </td>
               <td class="col-away">
-                <span class="team-name">${escapeHtml(match.away)}</span>
+                <span class="team-name">${awayContent}</span>
               </td>
               <td class="score col-score">${escapeHtml(match.score)}</td>
             `;
@@ -2039,10 +2064,7 @@
       }
 
       function formatScore(results) {
-        if (!results || !results.length) {
-          return '-- : --';
-        }
-        const final = results.find((entry) => entry.resultTypeID === 2 || entry.resultTypeId === 2) || results[results.length - 1];
+        const final = resolveOpenligaFinalResult(results);
         if (!final) {
           return '-- : --';
         }
@@ -2059,6 +2081,51 @@
         }
         const fallback = rawData.find((match) => match.group?.groupOrderID || match.Group?.GroupOrderID);
         return fallback?.group?.groupOrderID || fallback?.Group?.GroupOrderID || null;
+      }
+
+      function resolveOpenligaFinalResult(results) {
+        if (!Array.isArray(results) || !results.length) {
+          return null;
+        }
+        return results.find((entry) => entry.resultTypeID === 2 || entry.resultTypeId === 2) || results[results.length - 1] || null;
+      }
+
+      function extractOpenligaScoreDetails(match) {
+        const results = match?.matchResults || match?.MatchResults;
+        const final = resolveOpenligaFinalResult(results);
+        if (!final) {
+          return {};
+        }
+        const homeScore = parseScoreValue(final.pointsTeam1 ?? final.PointsTeam1);
+        const awayScore = parseScoreValue(final.pointsTeam2 ?? final.PointsTeam2);
+        const finished = Boolean(match?.matchIsFinished ?? match?.MatchIsFinished);
+        let winner = finished ? determineWinner(homeScore, awayScore) : null;
+        if (finished && !winner) {
+          const goals = match?.goals || match?.Goals;
+          if (Array.isArray(goals) && goals.length) {
+            const lastGoal = goals[goals.length - 1];
+            const altHome = parseScoreValue(lastGoal?.scoreTeam1 ?? lastGoal?.ScoreTeam1);
+            const altAway = parseScoreValue(lastGoal?.scoreTeam2 ?? lastGoal?.ScoreTeam2);
+            winner = determineWinner(altHome, altAway) || winner;
+          }
+        }
+        return {
+          homeScore,
+          awayScore,
+          winner
+        };
+      }
+
+      function parseScoreValue(value) {
+        const numeric = Number.parseInt(value, 10);
+        return Number.isFinite(numeric) ? numeric : null;
+      }
+
+      function determineWinner(homeScore, awayScore) {
+        if (!Number.isFinite(homeScore) || !Number.isFinite(awayScore) || homeScore === awayScore) {
+          return null;
+        }
+        return homeScore > awayScore ? 'home' : 'away';
       }
 
       async function fetchCurrentGroup(shortcut, season) {
