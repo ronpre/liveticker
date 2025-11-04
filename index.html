@@ -1336,20 +1336,35 @@
         const selectedEntry = state.matchdays.find((entry) => entry.order === state.activeMatchdayOrder) || state.matchdays[0] || null;
         const aggregated = new Map();
         const dateErrors = [];
+        const fetchedDates = new Set();
+
+        addEspnFootballMatches(aggregated, scoreboard);
+        const baseDay = normalizeToIsoDate(scoreboard?.day?.date);
+        if (baseDay) {
+          fetchedDates.add(baseDay);
+        }
 
         if (selectedEntry?.dates?.length) {
           for (const isoDate of selectedEntry.dates) {
+            if (!isoDate || fetchedDates.has(isoDate)) {
+              continue;
+            }
             try {
               const dayScoreboard = await fetchEspnFootballScoreboard(slug, isoDate);
-              const matchesOfDay = extractEspnFootballMatches(dayScoreboard);
-              matchesOfDay.forEach((match) => {
-                if (match && !aggregated.has(match.id)) {
-                  aggregated.set(match.id, match);
-                }
-              });
+              addEspnFootballMatches(aggregated, dayScoreboard);
+              fetchedDates.add(isoDate);
             } catch (error) {
               dateErrors.push({ date: isoDate, error });
             }
+          }
+        }
+
+        if (!aggregated.size && state.date) {
+          try {
+            const fallbackScoreboard = await fetchEspnFootballScoreboard(slug, state.date);
+            addEspnFootballMatches(aggregated, fallbackScoreboard);
+          } catch (error) {
+            dateErrors.push({ date: state.date, error });
           }
         }
 
@@ -1478,6 +1493,19 @@
           });
         });
         return matches;
+      }
+
+      function addEspnFootballMatches(target, scoreboard) {
+        if (!(target instanceof Map)) {
+          return;
+        }
+        const matches = extractEspnFootballMatches(scoreboard);
+        matches.forEach((match) => {
+          if (!match || !match.id || target.has(match.id)) {
+            return;
+          }
+          target.set(match.id, match);
+        });
       }
 
       function formatEspnFootballScore(home, away, competition) {
