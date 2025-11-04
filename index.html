@@ -1089,7 +1089,21 @@
         }
 
         if (Array.isArray(rawData)) {
-          const metadata = buildMatchdayMetadata(rawData);
+          let metadata = buildMatchdayMetadata(rawData);
+          if (leagueConfig.id === 'cl') {
+            metadata = metadata.map((entry) => {
+              if (!entry) {
+                return entry;
+              }
+              if (Number.isFinite(entry.order) && entry.order <= 6) {
+                return { ...entry, label: `${entry.order}. Spieltag` };
+              }
+              if (entry.label) {
+                return entry;
+              }
+              return { ...entry, label: `${entry.order}. Spieltag` };
+            });
+          }
           state.matchdays = metadata;
           ensureActiveMatchday(metadata);
           updateMatchdayDisplay();
