@@ -548,7 +548,8 @@
         {
           id: 'cl',
           label: 'Champions League',
-          shortcut: 'cl',
+          shortcut: (season) => (season ? `ucl${season}` : 'ucl2024'),
+          alternatives: ['cl'],
           table: false
         }
       ];
@@ -1018,6 +1019,21 @@
         }
       }
 
+      function resolveLeagueShortcuts(leagueConfig, season) {
+        const toArray = (value) => {
+          if (typeof value === 'function') {
+            return toArray(value(season));
+          }
+          if (Array.isArray(value)) {
+            return value.flatMap((entry) => toArray(entry));
+          }
+          return value ? [value] : [];
+        };
+
+        const candidates = [...toArray(leagueConfig.shortcut), ...toArray(leagueConfig.alternatives)];
+        return candidates.filter((entry, index) => candidates.indexOf(entry) === index);
+      }
+
       async function requestRefresh(explicit) {
         setStatus(explicit ? 'Lade Live-Daten …' : 'Aktualisiere …', 'info');
         state.fetchInFlight = true;
@@ -1048,7 +1064,7 @@
       async function loadFootball() {
         const leagueConfig = FOOTBALL_LEAGUES.find((league) => league.id === state.league) || FOOTBALL_LEAGUES[0];
         const season = deriveFootballSeason(state.date);
-        const shortcuts = [leagueConfig.shortcut, ...(leagueConfig.alternatives || [])].filter(Boolean);
+        const shortcuts = resolveLeagueShortcuts(leagueConfig, season);
 
         let rawData = [];
         let lastError = null;
