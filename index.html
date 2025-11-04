@@ -567,8 +567,13 @@
               if (baseSeason > 0) {
                 entries.push({ shortcut: `ucl${baseSeason - 1}`, season: baseSeason - 1 });
               }
+              if (baseSeason > 1) {
+                entries.push({ shortcut: `ucl${baseSeason - 2}`, season: baseSeason - 2 });
+              }
             }
-            entries.push({ shortcut: 'cl', season: baseSeason != null ? baseSeason : season });
+            if (baseSeason != null) {
+              entries.push({ shortcut: 'ucl', season: baseSeason }); // men-only fallback shortcut
+            }
             return entries;
           },
           table: true
