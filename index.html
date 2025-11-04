@@ -547,7 +547,7 @@
         { shortcut: 'cl1516', season: 2015 },
         { shortcut: 'cl1112', season: 2011 },
         { shortcut: 'cl1011', season: 2010 }
-      ];
+      ].sort((a, b) => b.season - a.season);
 
       const FOOTBALL_LEAGUES = [
         {
@@ -585,7 +585,22 @@
               addSeasonShortcut(baseSeason - 1);
               addSeasonShortcut(baseSeason - 2);
             }
-            CL_MEN_LEAGUE_FALLBACKS.forEach((entry) => {
+            const fallbackCandidates = CL_MEN_LEAGUE_FALLBACKS.filter((entry) => {
+              if (!Number.isFinite(entry?.season)) {
+                return false;
+              }
+              if (baseSeason == null) {
+                return true;
+              }
+              return entry.season <= baseSeason;
+            });
+            const prioritizedFallbacks = fallbackCandidates.length
+              ? fallbackCandidates
+              : CL_MEN_LEAGUE_FALLBACKS;
+            prioritizedFallbacks.forEach((entry) => {
+              if (!entry?.shortcut) {
+                return;
+              }
               entries.push({ shortcut: entry.shortcut, season: entry.season });
             });
             return entries;
