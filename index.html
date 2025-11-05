@@ -1243,6 +1243,19 @@
         return Number.isFinite(timestamp) ? timestamp : Number.NaN;
       }
 
+      function shiftIsoDate(isoDate, offsetDays) {
+        const normalized = normalizeToIsoDate(isoDate);
+        if (!normalized || !Number.isFinite(offsetDays) || offsetDays === 0) {
+          return normalized;
+        }
+        const base = new Date(`${normalized}T00:00:00Z`);
+        if (Number.isNaN(base.getTime())) {
+          return normalized;
+        }
+        base.setUTCDate(base.getUTCDate() + Math.trunc(offsetDays));
+        return base.toISOString().slice(0, 10);
+      }
+
       function formatChampionsLeagueStageLabel(stage, clusterIndex, clusterTotal) {
         const base = stage?.baseLabel || `Phase ${Number.isFinite(stage?.stageOrder) ? stage.stageOrder : clusterIndex + 1}`;
         if (stage?.stageOrder === 1) {
@@ -1690,32 +1703,126 @@
           });
         };
 
+        const isWithinStageRange = (stage, isoDate) => {
+          if (!stage || !isoDate) {
+            return false;
+          }
+          const timestamp = resolveIsoDateTimestamp(isoDate);
+          if (!Number.isFinite(timestamp)) {
+            return false;
+          }
+          if (Number.isFinite(stage.startMs) && timestamp < stage.startMs) {
+            return false;
+          }
+          if (Number.isFinite(stage.endMs) && timestamp > stage.endMs) {
+            return false;
+          }
+          return true;
+        };
+
+        const fetchStageDate = async (stage, isoDate, { allowNeighbors = true, scoreboard: preloaded } = {}) => {
+          const normalized = normalizeToIsoDate(isoDate);
+          if (!normalized || !isWithinStageRange(stage, normalized)) {
+            return 0;
+          }
+          const visitKey = `${stage.stageOrder}:${normalized}`;
+          const alreadyVisited = visitedDates.has(visitKey);
+          let scoreboard = preloaded || null;
+          if (!scoreboard && alreadyVisited) {
+            return 0;
+          }
+          if (!scoreboard) {
+            visitedDates.add(visitKey);
+            try {
+              scoreboard = await fetchEspnFootballScoreboard(
+                slug,
+                normalized,
+                stage.slug ? { group: stage.slug } : undefined
+              );
+            } catch (error) {
+              fetchErrors.push({ date: normalized, error });
+              return 0;
+            }
+          } else if (!alreadyVisited) {
+            visitedDates.add(visitKey);
+          }
+
+          const matchCountBefore = stage.matchIdsSet.size;
+          const dateCountBefore = stage.dateSet.size;
+          processScoreboard(scoreboard, normalized);
+          const addedMatches = stage.matchIdsSet.size - matchCountBefore;
+          const addedDates = stage.dateSet.size - dateCountBefore;
+
+          if (allowNeighbors && (addedMatches > 0 || addedDates > 0)) {
+            const neighborOffsets = [-2, -1, 1];
+            for (const offset of neighborOffsets) {
+              const neighbor = shiftIsoDate(normalized, offset);
+              if (!neighbor) {
+                continue;
+              }
+              const neighborKey = `${stage.stageOrder}:${neighbor}`;
+              if (visitedDates.has(neighborKey) || !isWithinStageRange(stage, neighbor)) {
+                continue;
+              }
+              await fetchStageDate(stage, neighbor, { allowNeighbors: false });
+            }
+          }
+
+          return addedMatches;
+        };
+
         const baseDayIso = normalizeToIsoDate(baseScoreboard?.day?.date);
-        if (baseDayIso) {
-          visitedDates.add(baseDayIso);
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const stateIsoDate = normalizeToIsoDate(state.date);
+
+        for (const stage of stageContexts) {
+          const priorityPairs = [
+            [stateIsoDate, true],
+            [todayIso, true],
+            [baseDayIso, true]
+          ];
+          for (const [iso, allowNeighbors] of priorityPairs) {
+            if (!iso || !isWithinStageRange(stage, iso)) {
+              continue;
+            }
+            const scoreboard = iso === baseDayIso ? baseScoreboard : null;
+            await fetchStageDate(stage, iso, { allowNeighbors, scoreboard });
+          }
         }
-        processScoreboard(baseScoreboard, baseDayIso);
 
         for (const stage of stageContexts) {
           if (!stage.startIso || !stage.endIso) {
             continue;
           }
-          const dates = enumerateIsoDateRange(stage.startIso, stage.endIso);
-          for (const isoDate of dates) {
-            if (visitedDates.has(isoDate)) {
-              continue;
+          await fetchStageDate(stage, stage.startIso, { allowNeighbors: true });
+
+          let cursor = shiftIsoDate(stage.startIso, 3);
+          let attempts = 0;
+          const maxAttempts = 64;
+
+          while (cursor && attempts < maxAttempts) {
+            const timestamp = resolveIsoDateTimestamp(cursor);
+            if (Number.isFinite(stage.endMs) && Number.isFinite(timestamp) && timestamp > stage.endMs) {
+              break;
             }
-            visitedDates.add(isoDate);
-            try {
-              const scoreboard = await fetchEspnFootballScoreboard(slug, isoDate, stage.slug ? { group: stage.slug } : undefined);
-              processScoreboard(scoreboard, isoDate);
-            } catch (error) {
-              fetchErrors.push({ date: isoDate, error });
-            }
+            const added = await fetchStageDate(stage, cursor, { allowNeighbors: true });
             if (stage.expectedMatches && stage.matchIdsSet.size >= stage.expectedMatches) {
               break;
             }
+            const nextStep = added > 0 ? 7 : 3;
+            const nextCursor = shiftIsoDate(cursor, nextStep);
+            if (!nextCursor) {
+              break;
+            }
+            const nextTimestamp = resolveIsoDateTimestamp(nextCursor);
+            if (Number.isFinite(stage.endMs) && Number.isFinite(nextTimestamp) && nextTimestamp > stage.endMs) {
+              break;
+            }
+            cursor = nextCursor;
+            attempts += 1;
           }
+
+          await fetchStageDate(stage, stage.endIso, { allowNeighbors: true });
         }
 
         if (!aggregatedMatches.size) {
