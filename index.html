@@ -563,6 +563,31 @@
           table: false
         },
         {
+          id: 'cl-men',
+          label: 'CL',
+          shortcut: (season) => {
+            const mapping = new Map([
+              [2024, 'ucl2024'],
+              [2023, 'uefacl22'],
+              [2022, 'uefacl22'],
+              [2020, 'ucl2020']
+            ]);
+            const direct = mapping.get(season);
+            if (direct) {
+              return { season, shortcut: direct };
+            }
+            return [
+              { season: 2024, shortcut: 'ucl2024' },
+              { season: 2022, shortcut: 'uefacl22' },
+              { season: 2020, shortcut: 'ucl2020' },
+              'cl'
+            ];
+          },
+          provider: 'openliga',
+          table: false,
+          matchdayBuilder: buildChampionsLeagueMetadata
+        },
+        {
           id: 'world-cup-men',
           label: 'WM',
           shortcut: (season) => {
@@ -1030,6 +1055,142 @@
           .sort((a, b) => a.order - b.order);
       }
 
+      function buildChampionsLeagueMetadata(matches) {
+        if (!Array.isArray(matches)) {
+          return [];
+        }
+
+        const stageBuckets = new Map();
+
+        matches.forEach((match) => {
+          const group = match?.group || match?.Group;
+          const rawOrder = group?.groupOrderID ?? group?.GroupOrderID;
+          const stageOrder = Number.parseInt(rawOrder, 10);
+          if (!Number.isFinite(stageOrder)) {
+            return;
+          }
+          if (!stageBuckets.has(stageOrder)) {
+            stageBuckets.set(stageOrder, []);
+          }
+          stageBuckets.get(stageOrder).push(match);
+        });
+
+        const stageLabels = new Map([
+          [1, 'Ligaphase'],
+          [2, 'Play-offs'],
+          [3, 'Achtelfinale'],
+          [4, 'Viertelfinale'],
+          [5, 'Halbfinale'],
+          [6, 'Finale']
+        ]);
+
+        const metadata = [];
+        let nextOrder = 1;
+
+        const sortedStages = Array.from(stageBuckets.keys()).sort((a, b) => a - b);
+
+        sortedStages.forEach((stageOrder) => {
+          const stageMatches = stageBuckets.get(stageOrder);
+          if (!Array.isArray(stageMatches) || !stageMatches.length) {
+            return;
+          }
+
+          const baseLabel = stageLabels.get(stageOrder)
+            || stageMatches[0]?.group?.groupName
+            || stageMatches[0]?.Group?.GroupName
+            || `Phase ${stageOrder}`;
+
+          const uniqueDates = new Set();
+
+          stageMatches.forEach((match) => {
+            const isoDate = normalizeToIsoDate(match.matchDateTimeUTC || match.matchDateTime);
+            if (isoDate) {
+              uniqueDates.add(isoDate);
+            }
+          });
+
+          if (!uniqueDates.size) {
+            return;
+          }
+
+          const clusters = clusterIsoDates(Array.from(uniqueDates));
+
+          clusters.forEach((dates, index) => {
+            if (!dates.length) {
+              return;
+            }
+
+            let label = baseLabel;
+
+            if (stageOrder === 1) {
+              label = `${baseLabel} · Spieltag ${index + 1}`;
+            } else if (clusters.length === 1) {
+              label = baseLabel;
+            } else if (clusters.length === 2) {
+              label = `${baseLabel} · ${index === 0 ? 'Hinspiele' : 'Rückspiele'}`;
+            } else {
+              label = `${baseLabel} · Termin ${index + 1}`;
+            }
+
+            metadata.push({
+              order: nextOrder++,
+              label,
+              primaryDate: dates[0],
+              dates
+            });
+          });
+        });
+
+        return metadata;
+      }
+
+      function clusterIsoDates(values, maxGapDays = 3) {
+        if (!Array.isArray(values) || !values.length) {
+          return [];
+        }
+
+        const normalized = Array.from(
+          new Set(values.map((value) => normalizeToIsoDate(value)).filter(Boolean))
+        ).sort();
+
+        if (!normalized.length) {
+          return [];
+        }
+
+        const clusters = [];
+        let current = [normalized[0]];
+        clusters.push(current);
+
+        for (let i = 1; i < normalized.length; i += 1) {
+          const isoDate = normalized[i];
+          const previous = normalized[i - 1];
+          const delta = differenceInDays(previous, isoDate);
+          if (!Number.isFinite(delta) || delta > maxGapDays) {
+            current = [isoDate];
+            clusters.push(current);
+          } else {
+            current.push(isoDate);
+          }
+        }
+
+        return clusters;
+      }
+
+      function differenceInDays(startIso, endIso) {
+        if (!startIso || !endIso) {
+          return Number.POSITIVE_INFINITY;
+        }
+
+        const startTime = Date.parse(`${startIso}T00:00:00Z`);
+        const endTime = Date.parse(`${endIso}T00:00:00Z`);
+
+        if (Number.isNaN(startTime) || Number.isNaN(endTime)) {
+          return Number.POSITIVE_INFINITY;
+        }
+
+        return Math.round(Math.abs(endTime - startTime) / 86400000);
+      }
+
       function createMatchdayDateLookup(matchdays) {
         const lookup = new Map();
         if (!Array.isArray(matchdays)) {
@@ -1251,7 +1412,10 @@
         }
 
         if (Array.isArray(rawData)) {
-          const metadata = buildMatchdayMetadata(rawData);
+          const builder = typeof leagueConfig.matchdayBuilder === 'function'
+            ? leagueConfig.matchdayBuilder
+            : buildMatchdayMetadata;
+          const metadata = builder(rawData, { leagueConfig });
           state.matchdays = metadata;
           state.matchdayDateLookup = createMatchdayDateLookup(metadata);
           ensureActiveMatchday(metadata);
