@@ -584,9 +584,11 @@
             ];
           },
           provider: 'openliga',
-          table: false,
+          table: true,
+          openligaTable: false,
           matchdayBuilder: buildChampionsLeagueMetadata,
-          espnSlug: 'uefa.champions'
+          espnSlug: 'uefa.champions',
+          espnStandingsSlug: 'uefa.champions'
         },
         {
           id: 'world-cup-men',
@@ -1547,7 +1549,8 @@
           || attempts?.[0]?.shortcut
           || (typeof leagueConfig.shortcut === 'string' ? leagueConfig.shortcut : null);
         const effectiveSeason = Number.isFinite(resolvedAttempt?.season) ? resolvedAttempt.season : season;
-        if (leagueConfig.table && effectiveShortcut) {
+  const allowOpenligaTable = leagueConfig.openligaTable !== false;
+  if (leagueConfig.table && effectiveShortcut && allowOpenligaTable) {
           let matchday = deriveMatchday(rawData, matches);
           if (!Number.isFinite(matchday) && Number.isFinite(state.activeMatchdayOrder)) {
             matchday = state.activeMatchdayOrder;
@@ -1959,7 +1962,24 @@
           : [];
 
         renderMatches(matches, 'Keine Spiele für den ausgewählten Spieltag gefunden.');
-        hideTable();
+
+        let tableWarning = null;
+        if (leagueConfig.table) {
+          try {
+            const standingsData = await fetchEspnFootballStandings(leagueConfig.espnStandingsSlug || slug);
+            const rows = formatEspnFootballStandings(standingsData);
+            if (rows.length) {
+              renderTable(rows);
+            } else {
+              renderTable([], { emptyMessage: 'Keine Tabellen-Daten verfügbar.' });
+            }
+          } catch (error) {
+            renderTable([], { emptyMessage: 'Tabelle konnte nicht geladen werden.' });
+            tableWarning = 'Tabelle für ' + competitionLabel + ' konnte nicht geladen werden: ' + error.message;
+          }
+        } else {
+          hideTable();
+        }
 
         state.resolvedSeason = baseScoreboard?.season?.year || leagueInfo?.season?.year || season || null;
         state.resolvedShortcut = null;
@@ -1985,6 +2005,11 @@
 
         if (missingMatchIds.length) {
           statusMessage += ` (${missingMatchIds.length} Spiele fehlen in den ESPN-Daten)`;
+          statusLevel = 'warning';
+        }
+
+        if (tableWarning) {
+          statusMessage += ` (${tableWarning})`;
           statusLevel = 'warning';
         }
 
