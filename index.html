@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Live Ergebnisdienst</title>
+  <title>Wochenend-Ergebnisse</title>
   <style>
     :root {
       color-scheme: dark;
@@ -362,6 +362,7 @@
 </head>
 <body>
   <header>
+    <h1>⚽ Wochenend-Ergebnisse</h1>
   </header>
 
   <main>
@@ -431,13 +432,15 @@
   </main>
 
   <footer>
-    <span>Automatische Aktualisierung alle 2&nbsp;Minuten (netzwerkschonender Abruf mit Drosselung). Bei ausbleibenden Live-Daten wird eine Simulation angezeigt.</span>
+    <span>Automatische Aktualisierung alle 2&nbsp;Minuten <strong>Fr&nbsp;18:00 – So&nbsp;21:00</strong>. Außerhalb dieses Zeitfensters werden keine Netzwerkabrufe durchgeführt.</span>
   </footer>
 
   <script>
     (() => {
       const POLL_INTERVAL_MS = 1000; // lightweight timer that checks whether a refresh is due
       const MIN_FETCH_INTERVAL_MS = 120000; // throttle real network calls (protect remote APIs)
+
+
       const FETCH_TIMEOUT_MS = 12000;
       const OPENLIGA_BASE = 'https://api.openligadb.de';
       const ESPN_FOOTBALL_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
@@ -616,26 +619,6 @@
           shortcut: 'dfb',
           provider: 'openliga',
           table: false
-        },
-        {
-          id: 'laliga',
-          label: 'Spanien',
-          provider: 'football-data',
-          footballDataPath: 'public/data/laliga-football-data.json',
-          footballDataFallback: 'espn',
-          espnSlug: 'esp.1',
-          espnStandingsSlug: 'esp.1',
-          table: true
-        },
-        {
-          id: 'pl',
-          label: 'England',
-          provider: 'football-data',
-          footballDataPath: 'public/data/pl-football-data.json',
-          footballDataFallback: 'espn',
-          espnSlug: 'eng.1',
-          espnStandingsSlug: 'eng.1',
-          table: true
         }
       ];
 
